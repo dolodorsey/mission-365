@@ -1,0 +1,26 @@
+{
+  "appId": "com.mission365.app",
+  "appName": "Mission 365",
+  "webDir": "out",
+  "server": {
+    "androidScheme": "https",
+    "iosScheme": "https"
+  },
+  "ios": {
+    "backgroundColor": "#080604",
+    "contentInset": "always",
+    "preferredContentMode": "mobile",
+    "scheme": "Mission365"
+  },
+  "plugins": {
+    "StatusBar": { "style": "DARK", "backgroundColor": "#080604" },
+    "SplashScreen": {
+      "launchShowDuration": 2500,
+      "launchAutoHide": true,
+      "backgroundColor": "#080604",
+      "showSpinner": false,
+      "splashFullScreen": true,
+      "splashImmersive": true
+    }
+  }
+}
