@@ -34,4 +34,5 @@ Updated: 2026-08-03
 - TypeScript: passed
 - Static routes generated: `/`, `/missions`, `/apply`, `/download`
 - Public-facing sample mission, donation, and impact claims: none
-
+- Production deployment: `https://mission-365.vercel.app`
+- Production route checks: HTTP 200 for all four public routes
