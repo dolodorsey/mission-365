@@ -4,3 +4,12 @@ ios/App/Pods/
 ios/App/.build/
 android/.gradle/
 android/app/build/
+
+# Web build
+node_modules/
+.next/
+out/
+.env
+.env.*
+!.env.example
+*.tsbuildinfo

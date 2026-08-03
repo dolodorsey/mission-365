@@ -1,133 +1,53 @@
 'use client'
-import { useState, useEffect } from 'react'
+import Image from 'next/image'
+import Link from 'next/link'
+import { ArrowRight, BadgeCheck, BarChart3, Building2, CalendarHeart, CheckCircle2, Globe2, HeartHandshake, LockKeyhole, ReceiptText, ShieldCheck, Sparkles, Users2 } from 'lucide-react'
 
-const categories = [
-  { name: 'Youth & Education', icon: '🎓', slug: 'youth-education' },
-  { name: 'Homelessness', icon: '🏠', slug: 'homelessness' },
-  { name: 'Food Security', icon: '🍽️', slug: 'food-security' },
-  { name: 'Health & Wellness', icon: '💚', slug: 'health-wellness' },
-  { name: 'Veterans', icon: '🎖️', slug: 'veterans' },
-  { name: 'Animal Welfare', icon: '🐾', slug: 'animal-welfare' },
-  { name: 'Faith & Community', icon: '⛪', slug: 'faith-community' },
-  { name: 'Disaster Relief', icon: '🔥', slug: 'disaster-relief' },
-  { name: 'Arts & Culture', icon: '🎨', slug: 'arts-culture' },
-  { name: 'Environment', icon: '🌿', slug: 'environment' },
-  { name: 'Women & Families', icon: '👨‍👩‍👧‍👦', slug: 'women-families' },
-  { name: 'Elderly & Seniors', icon: '🤝', slug: 'elderly-seniors' },
-]
+const roles = [
+  [HeartHandshake, 'Everyday donors', 'Give once or build a recurring plan around the causes that matter to you.'],
+  [Building2, 'Businesses', 'Sponsor verified missions and receive clear, exportable community-impact reporting.'],
+  [Users2, 'Mission owners', 'Apply for verification, publish a specific need, and report progress against milestones.'],
+] as const
 
 export default function Home() {
-  const [visible, setVisible] = useState(false)
-  useEffect(() => { setVisible(true) }, [])
+  return <main>
+    <nav className="nav-shell" aria-label="Primary navigation">
+      <Link href="/" className="brand"><span className="brand-mark">M</span><span>MISSION <b>365</b></span></Link>
+      <div className="nav-links"><a href="#model">How it works</a><a href="#trust">Trust</a><Link href="/missions">Missions</Link></div>
+      <Link href="/apply" className="button button-small">Submit a mission <ArrowRight size={16}/></Link>
+    </nav>
 
-  return (
-    <main className="grain min-h-screen">
-      {/* HERO */}
-      <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-b from-midnight via-midnight/95 to-midnight" />
-        <div className={`relative z-10 text-center px-6 max-w-4xl mx-auto transition-all duration-1000 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
-          <p className="text-gold/80 tracking-[0.3em] uppercase text-sm font-body mb-6">Give Every Day</p>
-          <h1 className="font-display text-6xl md:text-8xl font-light leading-[0.95] mb-8">
-            <span className="text-cream">Mission</span>{' '}
-            <span className="text-gold">365</span>
-          </h1>
-          <p className="text-cream/60 text-lg md:text-xl font-body max-w-2xl mx-auto mb-12 leading-relaxed">
-            Turn scattered giving into predictable impact. Subscribe monthly to verified causes. 
-            See exactly where your money goes. Change lives — every single day.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button className="px-8 py-4 bg-gold text-midnight font-body font-semibold tracking-wide hover:bg-gold/90 transition-all">
-              START GIVING
-            </button>
-            <button className="px-8 py-4 border border-cream/20 text-cream font-body tracking-wide hover:border-gold/50 hover:text-gold transition-all">
-              EXPLORE MISSIONS
-            </button>
-          </div>
-        </div>
-        {/* Stats bar */}
-        <div className="absolute bottom-0 left-0 right-0 border-t border-cream/10">
-          <div className="max-w-6xl mx-auto grid grid-cols-3 divide-x divide-cream/10">
-            {[
-              { value: '$0', label: 'Total Given', note: 'launching soon' },
-              { value: '0', label: 'Active Missions', note: 'accepting applications' },
-              { value: '365', label: 'Days of Impact', note: 'every day counts' },
-            ].map((s, i) => (
-              <div key={i} className="py-6 px-4 text-center">
-                <p className="text-gold font-display text-2xl md:text-3xl">{s.value}</p>
-                <p className="text-cream/40 text-xs tracking-wider uppercase mt-1">{s.label}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+    <section className="hero">
+      <div className="hero-copy">
+        <p className="eyebrow"><Sparkles size={14}/> Everyday giving. Verified impact.</p>
+        <h1>Make a little impact.<br/><span>Every single day.</span></h1>
+        <p className="hero-lede">Mission 365 turns one-time generosity into a trusted, year-round relationship between donors, businesses, and verified missions.</p>
+        <div className="hero-actions"><Link href="/missions" className="button">Explore verified missions <ArrowRight size={18}/></Link><Link href="/apply" className="button button-ghost">Apply as a mission owner</Link></div>
+        <div className="launch-state"><BadgeCheck/><div><strong>Verification-first launch</strong><span>Public giving opens after the first missions complete review.</span></div></div>
+      </div>
+      <div className="hero-art"><Image src="/brand/mission365-hero.png" alt="Mission 365 community at sunrise" fill priority sizes="(max-width:900px) 100vw,48vw"/><div className="art-caption"><Globe2 size={17}/> One community. One mission. Global impact.</div></div>
+    </section>
 
-      {/* HOW IT WORKS */}
-      <section className="py-24 px-6">
-        <div className="max-w-5xl mx-auto">
-          <h2 className="font-display text-4xl md:text-5xl text-center mb-4">
-            How <span className="text-gold">It Works</span>
-          </h2>
-          <p className="text-cream/50 text-center mb-16 max-w-2xl mx-auto">
-            Three steps to consistent, transparent, impactful giving.
-          </p>
-          <div className="grid md:grid-cols-3 gap-8">
-            {[
-              { step: '01', title: 'Discover', desc: 'Browse verified missions by cause, location, or urgency. Every organization is vetted.' },
-              { step: '02', title: 'Subscribe', desc: 'Choose your monthly amount. Pause, adjust, or cancel anytime. You\'re always in control.' },
-              { step: '03', title: 'See Impact', desc: 'Receive updates showing exactly where your money went. Photos, milestones, real stories.' },
-            ].map((item, i) => (
-              <div key={i} className="border border-cream/10 p-8 hover:border-gold/30 transition-all group">
-                <span className="text-gold/40 font-display text-5xl group-hover:text-gold/70 transition-all">{item.step}</span>
-                <h3 className="font-display text-2xl text-cream mt-4 mb-3">{item.title}</h3>
-                <p className="text-cream/50 text-sm leading-relaxed">{item.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+    <section className="truth-strip"><div><strong>0</strong><span>verified missions published</span></div><div><strong>$0</strong><span>publicly recorded giving</span></div><div><strong>100%</strong><span>review required before launch</span></div></section>
 
-      {/* CATEGORIES */}
-      <section className="py-24 px-6 bg-midnight/50">
-        <div className="max-w-6xl mx-auto">
-          <h2 className="font-display text-4xl md:text-5xl text-center mb-4">
-            Choose Your <span className="text-gold">Cause</span>
-          </h2>
-          <p className="text-cream/50 text-center mb-16 max-w-2xl mx-auto">
-            Every category. Every community. Every day.
-          </p>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {categories.map((cat, i) => (
-              <button key={i} className="border border-cream/10 p-6 text-left hover:border-gold/40 hover:bg-cream/5 transition-all group">
-                <span className="text-2xl mb-3 block">{cat.icon}</span>
-                <p className="text-cream/80 font-body text-sm group-hover:text-gold transition-all">{cat.name}</p>
-              </button>
-            ))}
-          </div>
-        </div>
-      </section>
+    <section className="section" id="model">
+      <div className="section-heading"><p className="eyebrow">One platform. Different roles.</p><h2>A complete giving ecosystem—not another donation button.</h2><p>Mission owners document the need. Reviewers verify the organization. Donors choose how to help. Every funded mission reports what happened next.</p></div>
+      <div className="role-grid">{roles.map(([Icon,title,text])=><article className="role-card" key={title}><Icon/><h3>{title}</h3><p>{text}</p></article>)}</div>
+      <div className="journey">{[['01','Create','Submit a specific, measurable need.'],['02','Verify','Review identity, purpose, organization and payout readiness.'],['03','Give','Open approved missions to one-time and recurring support.'],['04','Report','Publish milestones, receipts and impact evidence.']].map(([n,t,d])=><div className="journey-step" key={n}><span>{n}</span><h3>{t}</h3><p>{d}</p></div>)}</div>
+    </section>
 
-      {/* CTA */}
-      <section className="py-24 px-6 text-center">
-        <div className="max-w-3xl mx-auto">
-          <h2 className="font-display text-4xl md:text-6xl mb-6">
-            Ready to Make <span className="text-gold">Every Day</span> Count?
-          </h2>
-          <p className="text-cream/50 text-lg mb-10">
-            Join Mission 365. Support verified causes with predictable, transparent monthly giving.
-          </p>
-          <button className="px-10 py-4 bg-gold text-midnight font-body font-semibold tracking-wide text-lg hover:bg-gold/90 transition-all">
-            START YOUR MISSION
-          </button>
-        </div>
-      </section>
+    <section className="split-section"><div className="phone-art"><Image src="/brand/mission365-impact.png" alt="Mission 365 impact dashboard preview" fill sizes="(max-width:800px) 90vw,34vw"/></div><div className="split-copy"><p className="eyebrow"><BarChart3 size={14}/> Impact you can follow</p><h2>Every gift keeps its story.</h2><p>Donors should see which mission they supported, when it was funded, the next milestone, and the evidence the mission owner supplied.</p><ul className="feature-list"><li><CalendarHeart/> One-time and recurring plans</li><li><ReceiptText/> Donation history and receipts</li><li><CheckCircle2/> Milestones and verified updates</li><li><BarChart3/> Personal and business dashboards</li></ul></div></section>
 
-      {/* FOOTER */}
-      <footer className="border-t border-cream/10 py-12 px-6">
-        <div className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
-          <p className="font-display text-xl">Mission <span className="text-gold">365</span></p>
-          <p className="text-cream/30 text-xs">© 2026 The Kollective Hospitality Group. All rights reserved.</p>
-        </div>
-      </footer>
-    </main>
-  )
+    <section className="section trust" id="trust"><div className="section-heading"><p className="eyebrow"><ShieldCheck size={14}/> Safety, trust and integrity</p><h2>Trust is part of the product.</h2><p>Mission 365 will not publish sample charities, fictional donations, or projected impact as though it already happened.</p></div><div className="safeguard-grid">
+      <article><span><BadgeCheck/></span><div><h3>Mission verification</h3><p>Identity, organization and payout-readiness review before funding.</p></div></article>
+      <article><span><LockKeyhole/></span><div><h3>Protected giving</h3><p>Payments open only after Stripe and webhook verification.</p></div></article>
+      <article><span><ReceiptText/></span><div><h3>Visible outcomes</h3><p>Updates and evidence remain connected to the funded mission.</p></div></article>
+      <article><span><ShieldCheck/></span><div><h3>No manufactured impact</h3><p>Only reviewed missions and recorded activity appear in totals.</p></div></article>
+    </div></section>
+
+    <section className="partner-section"><div className="partner-art"><Image src="/brand/mission365-partner.png" alt="Mission 365 partnership artwork" fill sizes="(max-width:800px) 100vw,46vw"/></div><div className="partner-copy"><p className="eyebrow">Partners with purpose</p><h2>Turn community support into accountable action.</h2><p>Businesses can sponsor verified missions, support employee giving, and build a clear record of local impact.</p><Link className="button" href="/apply?role=business">Join as a business <ArrowRight size={18}/></Link></div></section>
+
+    <section className="final-cta"><p className="eyebrow">Give well. Report honestly. Repeat.</p><h2>365 days. Endless opportunities to help.</h2><div><Link href="/missions" className="button">Explore missions</Link><Link href="/apply" className="button button-ghost">Submit a mission</Link></div></section>
+    <footer><div className="brand"><span className="brand-mark">M</span><span>MISSION <b>365</b></span></div><p>© 2026 Mission 365. A Kollective Hospitality Group platform.</p><div><Link href="/missions">Missions</Link><Link href="/apply">Apply</Link><Link href="/download">Apps</Link></div></footer>
+  </main>
 }

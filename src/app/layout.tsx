@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Mission 365 | Give Every Day',
-  description: 'Subscription-based giving platform supporting verified causes through recurring donations with transparent impact tracking.',
+  title: 'Mission 365 | Everyday Giving. Verified Impact.',
+  description: 'A verification-first giving platform connecting donors, businesses, and mission owners through transparent, year-round impact.',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
