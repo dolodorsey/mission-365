@@ -1,4 +1,26 @@
 import Link from 'next/link'
-import { ArrowLeft, BadgeCheck, Search } from 'lucide-react'
+import { ArrowLeft, BadgeCheck } from 'lucide-react'
+import { createClient } from '@supabase/supabase-js'
+
+export const dynamic='force-dynamic'
 export const metadata={title:'Verified Missions | Mission 365',description:'Explore missions that have completed Mission 365 review.'}
-export default function Missions(){return <main className="status-page"><div className="status-card"><BadgeCheck size={44}/><p className="eyebrow">Verified mission directory</p><h1>No missions are published yet.</h1><p>That is intentional. A mission appears here only after its organization, leadership, funding purpose, milestones, and payout readiness have completed review. We will not seed this directory with fictional organizations.</p><div className="hero-actions"><Link className="button" href="/apply">Review application requirements</Link><Link className="button button-ghost" href="/"><ArrowLeft size={17}/> Home</Link></div><span className="sr-only"><Search/> Search will become available when verified missions are published.</span></div></main>}
+
+type Mission={id:string;slug:string;title:string;summary:string;category:string;city:string|null;region:string|null;goal_amount_cents:number;funded_amount_cents:number}
+
+export default async function Missions(){
+  const url=process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key=process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  let missions:Mission[]=[]
+  if(url&&key){
+    const supabase=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}})
+    const {data}=await supabase.from('mission365_missions').select('id,slug,title,summary,category,city,region,goal_amount_cents,funded_amount_cents').in('status',['published','funded','reporting']).order('published_at',{ascending:false})
+    missions=(data||[]) as Mission[]
+  }
+  return <main className="status-page"><div className="status-card">
+    <BadgeCheck size={44}/><p className="eyebrow">Verified mission directory</p><h1>Verified missions.</h1>
+    <p>Only reviewed, published missions appear here. No sample charities or manufactured fundraising totals.</p>
+    {missions.length===0?<div className="role-card"><h3>No missions are published yet.</h3><p>Applications can now enter verification. Giving opens only after approval and payout readiness.</p><Link className="button" href="/apply">Submit a mission</Link></div>:
+      <div className="role-grid">{missions.map(m=><article className="role-card" key={m.id}><p className="eyebrow">{m.category}</p><h3>{m.title}</h3><p>{m.summary}</p><p>{[m.city,m.region].filter(Boolean).join(', ')}</p><strong>${(Number(m.funded_amount_cents)/100).toLocaleString()} raised of ${(Number(m.goal_amount_cents)/100).toLocaleString()}</strong><Link className="button" href={`/missions/${m.slug}`}>View verified mission</Link></article>)}</div>}
+    <Link className="button button-ghost" href="/"><ArrowLeft size={17}/> Home</Link>
+  </div></main>
+}
