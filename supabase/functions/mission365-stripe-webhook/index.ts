@@ -38,11 +38,9 @@ function subscriptionMetadata(invoice: any) {
 
 function paymentIntentFromInvoice(invoice: any) {
   if (typeof invoice?.payment_intent === 'string') return invoice.payment_intent
-  const payments = invoice?.payments?.data || []
-  for (const row of payments) {
+  for (const row of invoice?.payments?.data || []) {
     const payment = row?.payment
     if (typeof payment?.payment_intent === 'string') return payment.payment_intent
-    if (payment?.type === 'payment_intent' && typeof payment?.payment_intent === 'string') return payment.payment_intent
   }
   return null
 }
@@ -56,6 +54,18 @@ async function issueReceipt(supabase: any, donation: any) {
     amount_cents: donation.amount_cents,
     currency: donation.currency || 'usd',
   }, { onConflict: 'donation_id', ignoreDuplicates: true })
+}
+
+async function completeOneTimeSession(supabase: any, session: any) {
+  const metadata = session.metadata || {}
+  if (!metadata.donation_id) return
+  const { data: donation } = await supabase.from('mission365_donations').update({
+    status: 'succeeded',
+    stripe_payment_intent_id: session.payment_intent,
+    succeeded_at: new Date().toISOString(),
+  }).eq('id', metadata.donation_id).select('*').single()
+  if (metadata.giving_plan_id) await supabase.from('mission365_giving_plans').update({ status: 'completed' }).eq('id', metadata.giving_plan_id)
+  await issueReceipt(supabase, donation)
 }
 
 Deno.serve(async (req: Request) => {
@@ -96,32 +106,29 @@ Deno.serve(async (req: Request) => {
         }
         await supabase.from('mission365_giving_plans').update(update).eq('id', metadata.giving_plan_id)
       }
-      if (object.mode === 'payment' && object.payment_status === 'paid' && metadata.donation_id) {
-        const { data: donation } = await supabase.from('mission365_donations').update({
-          status: 'succeeded',
-          stripe_payment_intent_id: object.payment_intent,
-          succeeded_at: new Date().toISOString(),
-        }).eq('id', metadata.donation_id).select('*').single()
-        await supabase.from('mission365_giving_plans').update({ status: 'completed' }).eq('id', metadata.giving_plan_id)
-        await issueReceipt(supabase, donation)
-      }
+      if (object.mode === 'payment' && object.payment_status === 'paid') await completeOneTimeSession(supabase, object)
+    }
+
+    if (event.type === 'checkout.session.async_payment_succeeded') {
+      if (object.mode === 'payment') await completeOneTimeSession(supabase, object)
+    }
+
+    if (event.type === 'checkout.session.async_payment_failed') {
+      const metadata = object.metadata || {}
+      if (metadata.donation_id) await supabase.from('mission365_donations').update({ status: 'failed' }).eq('id', metadata.donation_id)
+      if (metadata.giving_plan_id) await supabase.from('mission365_giving_plans').update({ status: 'payment_failed' }).eq('id', metadata.giving_plan_id)
     }
 
     if (event.type === 'invoice.paid') {
       const metadata = subscriptionMetadata(object)
       const subscriptionId = object.subscription || object?.parent?.subscription_details?.subscription
       if (metadata.giving_plan_id && metadata.mission_id && metadata.donor_user_id) {
-        await supabase.from('mission365_giving_plans').update({
-          status: 'active',
-          ...(subscriptionId ? { stripe_subscription_id: subscriptionId } : {}),
-        }).eq('id', metadata.giving_plan_id)
-
+        await supabase.from('mission365_giving_plans').update({ status: 'active', ...(subscriptionId ? { stripe_subscription_id: subscriptionId } : {}) }).eq('id', metadata.giving_plan_id)
         const paymentIntentId = paymentIntentFromInvoice(object)
         const amount = Number(object.amount_paid || 0)
         if (paymentIntentId && amount > 0) {
           const { data: existing } = await supabase.from('mission365_donations').select('id').eq('stripe_payment_intent_id', paymentIntentId).maybeSingle()
           if (!existing) {
-            const feeBps = 500
             const donationId = crypto.randomUUID()
             const { data: donation } = await supabase.from('mission365_donations').insert({
               id: donationId,
@@ -129,7 +136,7 @@ Deno.serve(async (req: Request) => {
               donor_user_id: metadata.donor_user_id,
               mission_id: metadata.mission_id,
               amount_cents: amount,
-              platform_fee_cents: Math.floor(amount * feeBps / 10000),
+              platform_fee_cents: Math.floor(amount * 500 / 10000),
               currency: String(object.currency || 'usd').toLowerCase(),
               status: 'succeeded',
               stripe_payment_intent_id: paymentIntentId,
@@ -140,6 +147,16 @@ Deno.serve(async (req: Request) => {
           }
         }
       }
+    }
+
+    if (event.type === 'invoice.payment_failed') {
+      const metadata = subscriptionMetadata(object)
+      if (metadata.giving_plan_id) await supabase.from('mission365_giving_plans').update({ status: 'payment_failed' }).eq('id', metadata.giving_plan_id)
+    }
+
+    if (event.type === 'customer.subscription.deleted') {
+      const metadata = object.metadata || {}
+      if (metadata.giving_plan_id) await supabase.from('mission365_giving_plans').update({ status: 'cancelled' }).eq('id', metadata.giving_plan_id)
     }
 
     if (event.type === 'payment_intent.payment_failed') {
@@ -176,10 +193,7 @@ Deno.serve(async (req: Request) => {
     await supabase.from('mission365_stripe_events').update({ processing_status: 'processed', processed_at: new Date().toISOString() }).eq('stripe_event_id', event.id)
     return Response.json({ received: true })
   } catch (error) {
-    await supabase.from('mission365_stripe_events').update({
-      processing_status: 'failed',
-      error_message: error instanceof Error ? error.message : 'Unknown processing error',
-    }).eq('stripe_event_id', event.id)
+    await supabase.from('mission365_stripe_events').update({ processing_status: 'failed', error_message: error instanceof Error ? error.message : 'Unknown processing error' }).eq('stripe_event_id', event.id)
     return Response.json({ error: 'Webhook processing failed' }, { status: 500 })
   }
 })
