@@ -5,7 +5,17 @@ import { stripeGet, stripePost } from '@/lib/stripe-rest'
 export const dynamic='force-dynamic'
 
 type ReleaseBody={payoutId?:string}
-type ConnectAccount={configuration?:{recipient?:{capabilities?:{stripe_balance?:{stripe_transfers?:{status?:string}}}}}}}
+type ConnectAccount={
+  configuration?:{
+    recipient?:{
+      capabilities?:{
+        stripe_balance?:{
+          stripe_transfers?:{status?:string}
+        }
+      }
+    }
+  }
+}
 type StripeTransfer={id:string}
 
 export async function POST(request:Request){
