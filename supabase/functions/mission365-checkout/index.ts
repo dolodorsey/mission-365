@@ -36,8 +36,12 @@ Deno.serve(async (req:Request)=>{
     const {data:mission,error:missionError}=await admin.from('mission365_missions').select('id,title,status,published_at').eq('id',missionId).single()
     if(missionError||!mission||!['published','funded','reporting'].includes(mission.status)||!mission.published_at) return Response.json({error:'This mission is not currently open for verified giving'},{status:409,headers:corsHeaders})
 
-    const {data:stripeSecret,error:secretError}=await admin.rpc('mission365_get_runtime_secret',{secret_name:'stripe_api_key'})
-    if(secretError||!stripeSecret||String(stripeSecret).startsWith('REPLACE_WITH_')) return Response.json({error:'Mission 365 giving is not activated yet'},{status:503,headers:corsHeaders})
+    let stripeSecret=Deno.env.get('STRIPE_SECRET_KEY')||''
+    if(!stripeSecret){
+      const {data:vaultSecret}=await admin.rpc('mission365_get_runtime_secret',{secret_name:'stripe_api_key'})
+      stripeSecret=String(vaultSecret||'')
+    }
+    if(!stripeSecret||stripeSecret.startsWith('REPLACE_WITH_')) return Response.json({error:'Mission 365 giving is not activated yet'},{status:503,headers:corsHeaders})
 
     const givingPlanId=crypto.randomUUID(); const donationId=crypto.randomUUID(); const idempotencyKey=crypto.randomUUID()
     const platformFeeBps=500; const platformFeeCents=Math.floor(amountCents*platformFeeBps/10000)
