@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from 'react'
 import Link from 'next/link'
+import { MISSION365_CHECKOUT_URL, MISSION365_SUPABASE_PUBLISHABLE_KEY } from '@/lib/mission365-public'
 import { supabase } from '@/lib/supabase'
 
 export default function DonateForm({missionId}:{missionId:string}){
@@ -18,7 +19,7 @@ export default function DonateForm({missionId}:{missionId:string}){
     const amountCents=Math.round(Number(amount)*100)
     if(!Number.isFinite(amountCents)||amountCents<100){setMessage('Choose an amount of at least $1.');return}
     setBusy(true);setMessage('')
-    const response=await fetch('/api/stripe/checkout',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({missionId,amountCents,cadence})})
+    const response=await fetch(MISSION365_CHECKOUT_URL,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`,apikey:MISSION365_SUPABASE_PUBLISHABLE_KEY},body:JSON.stringify({missionId,amountCents,cadence})})
     const body=await response.json();setBusy(false)
     if(!response.ok){setMessage(body.error||'Giving is not available yet.');return}
     if(body.checkoutUrl) window.location.assign(body.checkoutUrl)
