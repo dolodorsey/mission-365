@@ -1,38 +1,51 @@
 # MISSION 365 release evidence
 
-Updated: 2026-08-03
+Updated: 2026-08-07
 
 ## Product boundary
 
-- MISSION 365 remains its own brand, repository, application, and planned database boundary.
-- The interface uses the supplied MISSION 365 graphics from the owner-provided graphics library.
-- The product model follows the MISSION 365 deck: donors, businesses, mission owners, verification, recurring giving, impact milestones, receipts, and reporting.
+- MISSION 365 remains its own brand, repository, application, Supabase project, payment ledger, and runtime boundary.
+- Production backend project: `MISSION 365` in `us-east-1`.
+- Public UI is hosted on Vercel; protected payment and payout operations run in the dedicated Supabase Edge Runtime.
+- The product model covers donors, businesses, mission owners, verification, recurring giving, impact milestones, receipts, risk controls, payouts, and reporting.
 
 ## Completed in this release
 
-- Replaced the generic black-and-gold landing page with the approved multicolor MISSION 365 visual language.
-- Added responsive public home, verified-mission directory, application-readiness, and mobile-release routes.
-- Added honest launch totals: zero verified missions and zero recorded giving.
-- Removed the generic TestFlight destination and unverified Android package download.
-- Added a versioned Supabase schema for profiles, organizations, members, private applications, missions, milestones, impact updates, giving plans, and donations.
-- Enabled RLS on every public table and limited public mission data to reviewed, published records.
-- Kept payment creation and protected operational writes server-only.
-- Upgraded to Next.js 16.2.12, React 19.2.8, Supabase JS 2.112.0, and Node 22+.
-- Production build and TypeScript validation pass across all routes.
+- Converted the project from a static-export website into a real Next.js server-capable application.
+- Added Donor, Mission Owner, Business Partner, and Admin/Verification operating surfaces.
+- Added email/password authentication and RLS-backed private application submission.
+- Added a Supabase-backed verified mission directory and individual mission pages.
+- Provisioned the dedicated MISSION 365 Supabase production project and applied the full schema.
+- Added private document storage, explicit Data API grants, RLS policies, payout accounting, webhook idempotency, receipts, risk events, notifications, audit history, and financial-integrity triggers.
+- Deployed isolated Supabase Edge Functions for Stripe Checkout, Stripe webhook reconciliation, and controlled payout release.
+- Registered the live Stripe webhook endpoint on API version `2026-06-24.dahlia` and stored its signing secret in Supabase Vault.
+- Added one-time and monthly Checkout session creation with mission/donor/giving-plan metadata.
+- Added webhook handling for paid/failed/async payments, recurring invoices, subscription cancellation, refunds, and disputes.
+- Added hold-and-release payout controls using separate charges and transfers economics; platform fees are retained by transferring less to recipients.
+- Upgraded Next.js from 16.2.12 to 16.3.0 to remediate production PostCSS/sharp advisories.
+- Production dependency audit passes with zero production vulnerabilities after the upgrade.
+- TypeScript and optimized Next.js production build pass under Next.js 16.3.0.
+- Supabase security advisor reports only informational no-policy notices on intentionally server-only tables.
 
-## Deliberately not claimed complete
+## Launch safety gates
 
-- No mission is public until an actual applicant completes verification.
-- Secure application submission is not enabled until the dedicated MISSION 365 Supabase project exists and the intake function is deployed.
-- Stripe giving is not enabled. It requires a rotated secret, a webhook signing secret, connected payout onboarding, refund/dispute handling, and end-to-end verification.
-- Native downloads remain unavailable until signed iOS and Android builds are verified.
-- The schema migration is committed locally but must not be applied to the shared MCP Gateway database; MISSION 365 needs its own production project.
+- No fictional missions, donations, or impact records are seeded.
+- No mission is public until its organization completes verification and payout readiness.
+- Live giving remains credential-gated until a dedicated Stripe restricted live API key is added to the MISSION 365 Supabase Edge Function secret/Vault. The current placeholder intentionally returns HTTP 503 instead of attempting a charge.
+- Mission payout release requires a Mission 365 `admin` or `finance` app-metadata role, an approved payout record, an active Stripe recipient transfer capability, and sufficient cleared mission proceeds.
+- Native App Store / Play Store release remains separate from this web production release.
 
 ## Verification
 
-- Next.js production build: passed
-- TypeScript: passed
-- Static routes generated: `/`, `/missions`, `/apply`, `/download`
-- Public-facing sample mission, donation, and impact claims: none
-- Production deployment: `https://mission-365.vercel.app`
-- Production route checks: HTTP 200 for all four public routes
+- Dedicated Supabase project: ACTIVE_HEALTHY
+- RLS: enabled across all Mission 365 public tables
+- Private storage bucket: created
+- Stripe live webhook endpoint: enabled
+- Supabase Stripe webhook function: ACTIVE
+- Supabase Checkout function: ACTIVE
+- Supabase payout-release function: ACTIVE
+- Production dependency audit: passed, 0 production vulnerabilities
+- Next.js: 16.3.0
+- TypeScript validation: passed
+- Next.js optimized production build: passed
+- Production web target: `https://mission-365.vercel.app`
