@@ -19,3 +19,10 @@ export async function requireUser(request:Request){
   if(error||!data.user) return null
   return data.user
 }
+
+export async function requireMission365Role(request:Request,allowed:string[]){
+  const user=await requireUser(request)
+  if(!user) return null
+  const role=String(user.app_metadata?.mission365_role||'donor')
+  return allowed.includes(role)?user:null
+}
