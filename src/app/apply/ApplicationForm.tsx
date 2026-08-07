@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 
 export default function ApplicationForm(){
   const [sessionReady,setSessionReady]=useState(false)
-  const [token,setToken]=useState<string|null>(null)
+  const [userId,setUserId]=useState<string|null>(null)
   const [type,setType]=useState<'mission_owner'|'business_partner'>('mission_owner')
   const [legalName,setLegalName]=useState('')
   const [publicName,setPublicName]=useState('')
@@ -16,22 +16,26 @@ export default function ApplicationForm(){
   const [message,setMessage]=useState('')
   const [busy,setBusy]=useState(false)
 
-  useEffect(()=>{supabase.auth.getSession().then(({data})=>{setToken(data.session?.access_token||null);setEmail(data.session?.user.email||'');setSessionReady(true)})},[])
+  useEffect(()=>{supabase.auth.getSession().then(({data})=>{setUserId(data.session?.user.id||null);setEmail(data.session?.user.email||'');setSessionReady(true)})},[])
 
   async function submit(event:FormEvent){
-    event.preventDefault(); if(!token)return
+    event.preventDefault(); if(!userId)return
     setBusy(true);setMessage('')
-    const response=await fetch('/api/applications',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({
-      applicationType:type,legalName,publicName,contactEmail:email,missionSummary:summary,
-      requestedAmountCents:amount?Math.round(Number(amount)*100):null
-    })})
-    const body=await response.json();setBusy(false)
-    if(!response.ok){setMessage(body.error||'Submission failed');return}
-    setMessage(`Submitted. Application ${body.application.id} is now in review.`)
+    const requestedAmountCents=amount?Math.round(Number(amount)*100):null
+    const {data:application,error:insertError}=await supabase.from('mission365_applications').insert({
+      applicant_user_id:userId,application_type:type,legal_name:legalName.trim(),public_name:publicName.trim(),
+      contact_email:email.trim().toLowerCase(),mission_summary:summary.trim(),requested_amount_cents:requestedAmountCents,
+      status:'draft'
+    }).select('id').single()
+    if(insertError||!application){setBusy(false);setMessage(insertError?.message||'Submission failed');return}
+    const {error:updateError}=await supabase.from('mission365_applications').update({status:'submitted',submitted_at:new Date().toISOString()}).eq('id',application.id)
+    setBusy(false)
+    if(updateError){setMessage(updateError.message);return}
+    setMessage(`Submitted. Application ${application.id} is now in review.`)
   }
 
   if(!sessionReady)return <p>Checking your Mission 365 account…</p>
-  if(!token)return <div><p>You need a Mission 365 account before submitting private verification information.</p><Link className="button" href="/login">Sign in or create account</Link></div>
+  if(!userId)return <div><p>You need a Mission 365 account before submitting private verification information.</p><Link className="button" href="/login">Sign in or create account</Link></div>
 
   return <form onSubmit={submit} className="application-form">
     <label>Application type<select value={type} onChange={e=>setType(e.target.value as typeof type)}><option value="mission_owner">Mission owner</option><option value="business_partner">Business partner</option></select></label>
