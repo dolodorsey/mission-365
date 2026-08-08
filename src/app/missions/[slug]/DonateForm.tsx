@@ -6,31 +6,10 @@ import { MISSION365_CHECKOUT_URL, MISSION365_SUPABASE_PUBLISHABLE_KEY } from '@/
 import { supabase } from '@/lib/supabase'
 
 export default function DonateForm({missionId}:{missionId:string}){
-  const [token,setToken]=useState<string|null>(null)
-  const [ready,setReady]=useState(false)
-  const [amount,setAmount]=useState('25')
-  const [cadence,setCadence]=useState<'one_time'|'monthly'>('one_time')
-  const [message,setMessage]=useState('')
-  const [busy,setBusy]=useState(false)
-  useEffect(()=>{supabase.auth.getSession().then(({data})=>{setToken(data.session?.access_token||null);setReady(true)})},[])
-
-  async function give(event:FormEvent){
-    event.preventDefault(); if(!token)return
-    const amountCents=Math.round(Number(amount)*100)
-    if(!Number.isFinite(amountCents)||amountCents<100){setMessage('Choose an amount of at least $1.');return}
-    setBusy(true);setMessage('')
-    const response=await fetch(MISSION365_CHECKOUT_URL,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`,apikey:MISSION365_SUPABASE_PUBLISHABLE_KEY},body:JSON.stringify({missionId,amountCents,cadence})})
-    const body=await response.json();setBusy(false)
-    if(!response.ok){setMessage(body.error||'Giving is not available yet.');return}
-    if(body.checkoutUrl) window.location.assign(body.checkoutUrl)
-  }
-
-  if(!ready)return <p>Checking giving access…</p>
-  if(!token)return <div><p>Sign in to give and keep your receipts, recurring plans, and impact history together.</p><Link className="button" href="/login">Sign in to give</Link></div>
-  return <form className="application-form" onSubmit={give}>
-    <label>Gift amount (USD)<input type="number" min="1" step="1" value={amount} onChange={e=>setAmount(e.target.value)} required /></label>
-    <label>Giving schedule<select value={cadence} onChange={e=>setCadence(e.target.value as typeof cadence)}><option value="one_time">Give once</option><option value="monthly">Give every month</option></select></label>
-    <button className="button" disabled={busy}>{busy?'Opening secure checkout…':cadence==='monthly'?'Start monthly giving':'Give securely'}</button>
-    {message&&<p>{message}</p>}
-  </form>
+ const [token,setToken]=useState<string|null>(null),[userId,setUserId]=useState<string|null>(null),[ready,setReady]=useState(false),[amount,setAmount]=useState('25'),[cadence,setCadence]=useState<'one_time'|'monthly'>('one_time'),[message,setMessage]=useState(''),[busy,setBusy]=useState(false),[terms,setTerms]=useState(false),[accepted,setAccepted]=useState(false)
+ useEffect(()=>{supabase.auth.getSession().then(async({data})=>{const session=data.session;setToken(session?.access_token||null);setUserId(session?.user.id||null);if(session){const {data:row}=await supabase.from('mission365_terms_acceptances').select('id').eq('user_id',session.user.id).eq('document_key','donor_terms').eq('version','2026-08-08').maybeSingle();setAccepted(Boolean(row));setTerms(Boolean(row))}setReady(true)})},[])
+ async function give(event:FormEvent){event.preventDefault();if(!token||!userId)return;const amountCents=Math.round(Number(amount)*100);if(!Number.isFinite(amountCents)||amountCents<100){setMessage('Choose an amount of at least $1.');return}if(!accepted&&!terms){setMessage('Accept the current donor terms before giving.');return}setBusy(true);setMessage('');try{if(!accepted){const {error}=await supabase.from('mission365_terms_acceptances').upsert({user_id:userId,document_key:'donor_terms',version:'2026-08-08',metadata:{surface:'mission_checkout'}},{onConflict:'user_id,document_key,version',ignoreDuplicates:true});if(error)throw error;setAccepted(true)}const response=await fetch(MISSION365_CHECKOUT_URL,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`,apikey:MISSION365_SUPABASE_PUBLISHABLE_KEY},body:JSON.stringify({missionId,amountCents,cadence})});const body=await response.json();if(!response.ok)throw new Error(body.error||'Giving is not available yet.');if(body.checkoutUrl)window.location.assign(body.checkoutUrl)}catch(error){setMessage(error instanceof Error?error.message:'Giving is not available yet.')}finally{setBusy(false)}}
+ if(!ready)return <p>Checking giving access…</p>
+ if(!token)return <div><p>Sign in to give and keep your receipts, recurring plans, and impact history together.</p><Link className="button" href="/login">Sign in to give</Link></div>
+ return <form className="application-form" onSubmit={give}><label>Gift amount (USD)<input type="number" min="1" step="1" value={amount} onChange={e=>setAmount(e.target.value)} required /></label><label>Giving schedule<select value={cadence} onChange={e=>setCadence(e.target.value as typeof cadence)}><option value="one_time">Give once</option><option value="monthly">Give every month</option></select></label>{!accepted&&<label className="policy-check"><input type="checkbox" checked={terms} onChange={e=>setTerms(e.target.checked)}/><span>I accept the current <Link href="/legal#donor">Mission 365 donor/refund terms</Link>. I understand Mission 365 does not represent every contribution as tax-deductible.</span></label>}<button className="button" disabled={busy}>{busy?'Opening secure checkout…':cadence==='monthly'?'Start monthly giving':'Give securely'}</button>{message&&<p>{message}</p>}<small className="muted">Payment and recurring-plan management are handled through Stripe. Mission 365 records the verified mission, gift, receipt, and subsequent impact history.</small></form>
 }
