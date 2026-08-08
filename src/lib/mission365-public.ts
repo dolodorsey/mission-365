@@ -4,3 +4,6 @@ export const MISSION365_CHECKOUT_URL = `${MISSION365_SUPABASE_URL}/functions/v1/
 export const MISSION365_LAUNCH_STATUS_URL = `${MISSION365_SUPABASE_URL}/functions/v1/mission365-launch-status`
 export const MISSION365_ADMIN_QUEUE_URL = `${MISSION365_SUPABASE_URL}/functions/v1/mission365-admin-queue`
 export const MISSION365_REVIEW_ACTION_URL = `${MISSION365_SUPABASE_URL}/functions/v1/mission365-review-action`
+export const MISSION365_OWNER_PORTAL_URL = `${MISSION365_SUPABASE_URL}/functions/v1/mission365-owner-portal`
+export const MISSION365_DONOR_DASHBOARD_URL = `${MISSION365_SUPABASE_URL}/functions/v1/mission365-donor-dashboard`
+export const MISSION365_BUSINESS_DASHBOARD_URL = `${MISSION365_SUPABASE_URL}/functions/v1/mission365-business-dashboard`
