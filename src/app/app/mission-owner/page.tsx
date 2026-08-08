@@ -1,4 +1,3 @@
-import MissionOwnerPortal from './MissionOwnerPortal'
-
+import MissionOwnerWorkspace from './MissionOwnerWorkspace'
 export const metadata={title:'Mission Owner | Mission 365'}
-export default function MissionOwner(){return <MissionOwnerPortal/>}
+export default function MissionOwner(){return <MissionOwnerWorkspace/>}

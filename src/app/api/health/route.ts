@@ -1,14 +1,4 @@
 import { NextResponse } from 'next/server'
-import { MISSION365_SUPABASE_URL } from '@/lib/mission365-public'
-
+import { MISSION365_LAUNCH_STATUS_URL, MISSION365_SUPABASE_PUBLISHABLE_KEY, MISSION365_SUPABASE_URL } from '@/lib/mission365-public'
 export const dynamic='force-dynamic'
-export function GET(){
-  return NextResponse.json({
-    service:'mission-365',
-    status:'ok',
-    build:'operating-app',
-    backend:{provider:'supabase',isolated:true,url:MISSION365_SUPABASE_URL},
-    runtimes:{applications:'supabase-rls',checkout:'supabase-edge',stripeWebhook:'supabase-edge',payouts:'supabase-edge'},
-    liveGiving:'credential-gated'
-  },{headers:{'Cache-Control':'no-store'}})
-}
+export async function GET(){try{const response=await fetch(MISSION365_LAUNCH_STATUS_URL,{headers:{apikey:MISSION365_SUPABASE_PUBLISHABLE_KEY},cache:'no-store'});const launch=response.ok?await response.json():null;return NextResponse.json({service:'mission-365',status:response.ok?'ok':'degraded',build:'launch-completion',backend:{provider:'supabase',isolated:true,url:MISSION365_SUPABASE_URL},runtimes:{applications:'supabase-rls',verification:'supabase-edge',checkout:'supabase-edge',stripeWebhook:'supabase-edge',connect:'supabase-edge',payouts:'supabase-edge',risk:'supabase-edge',notifications:'supabase-edge'},payments:launch?.payments||{stripeApi:false,webhook:false,liveGiving:false},verificationCandidates:launch?.verificationCandidates??null,liveMissions:launch?.liveMissions??null},{status:response.ok?200:503,headers:{'Cache-Control':'no-store'}})}catch(error){return NextResponse.json({service:'mission-365',status:'degraded',error:error instanceof Error?error.message:'Health check failed'},{status:503,headers:{'Cache-Control':'no-store'}})}}

@@ -1,0 +1,4 @@
+import type { MetadataRoute } from 'next'
+import { createClient } from '@supabase/supabase-js'
+import { MISSION365_SUPABASE_PUBLISHABLE_KEY, MISSION365_SUPABASE_URL } from '@/lib/mission365-public'
+export default async function sitemap():Promise<MetadataRoute.Sitemap>{const base='https://mission-365.vercel.app';const fixed=['','/missions','/legal'].map(path=>({url:`${base}${path}`,lastModified:new Date(),changeFrequency:path===''?'weekly' as const:'daily' as const,priority:path===''?1:.8}));const db=createClient(MISSION365_SUPABASE_URL,MISSION365_SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:false,autoRefreshToken:false}});const {data}=await db.from('mission365_missions').select('slug,updated_at').in('status',['published','funded','reporting','completed']).not('published_at','is',null);return [...fixed,...(data||[]).map(m=>({url:`${base}/missions/${m.slug}`,lastModified:new Date(m.updated_at),changeFrequency:'weekly' as const,priority:.7}))]}
