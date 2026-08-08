@@ -3,3 +3,4 @@ export const MISSION365_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_02rYD0XFYvb2A
 export const MISSION365_CHECKOUT_URL = `${MISSION365_SUPABASE_URL}/functions/v1/mission365-checkout`
 export const MISSION365_LAUNCH_STATUS_URL = `${MISSION365_SUPABASE_URL}/functions/v1/mission365-launch-status`
 export const MISSION365_ADMIN_QUEUE_URL = `${MISSION365_SUPABASE_URL}/functions/v1/mission365-admin-queue`
+export const MISSION365_REVIEW_ACTION_URL = `${MISSION365_SUPABASE_URL}/functions/v1/mission365-review-action`
