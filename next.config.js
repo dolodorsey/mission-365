@@ -6,7 +6,7 @@ const nextConfig = {
     return [
       {
         source: '/brand/:path*',
-        destination: 'https://mission-365-ik92kdw4k-dr-dorseys-projects.vercel.app/brand/:path*',
+        destination: 'https://raw.githubusercontent.com/dolodorsey/mission-365/main/public/brand/:path*',
       },
     ]
   },
