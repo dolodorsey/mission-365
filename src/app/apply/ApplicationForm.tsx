@@ -3,11 +3,13 @@
 import { FormEvent, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import type { ApplicationType } from '@/lib/application-type'
+import { DEFAULT_APPLICATION_TYPE, resolveApplicationType } from '@/lib/application-type'
 
-export default function ApplicationForm(){
+export default function ApplicationForm({initialType=DEFAULT_APPLICATION_TYPE}:{initialType?:ApplicationType}){
   const [sessionReady,setSessionReady]=useState(false)
   const [userId,setUserId]=useState<string|null>(null)
-  const [type,setType]=useState<'mission_owner'|'business_partner'>('mission_owner')
+  const [type,setType]=useState<ApplicationType>(initialType)
   const [legalName,setLegalName]=useState('')
   const [publicName,setPublicName]=useState('')
   const [email,setEmail]=useState('')
@@ -21,9 +23,11 @@ export default function ApplicationForm(){
   async function submit(event:FormEvent){
     event.preventDefault(); if(!userId)return
     setBusy(true);setMessage('')
-    const requestedAmountCents=amount?Math.round(Number(amount)*100):null
+    // Re-validate before the write: `type` originates from a URL query string.
+    const applicationType=resolveApplicationType(type)
+    const requestedAmountCents=applicationType==='mission_owner'&&amount?Math.round(Number(amount)*100):null
     const {data:application,error:insertError}=await supabase.from('mission365_applications').insert({
-      applicant_user_id:userId,application_type:type,legal_name:legalName.trim(),public_name:publicName.trim(),
+      applicant_user_id:userId,application_type:applicationType,legal_name:legalName.trim(),public_name:publicName.trim(),
       contact_email:email.trim().toLowerCase(),mission_summary:summary.trim(),requested_amount_cents:requestedAmountCents,
       status:'draft'
     }).select('id').single()
@@ -38,7 +42,7 @@ export default function ApplicationForm(){
   if(!userId)return <div><p>You need a Mission 365 account before submitting private verification information.</p><Link className="button" href="/login">Sign in or create account</Link></div>
 
   return <form onSubmit={submit} className="application-form">
-    <label>Application type<select value={type} onChange={e=>setType(e.target.value as typeof type)}><option value="mission_owner">Mission owner</option><option value="business_partner">Business partner</option></select></label>
+    <label>Application type<select value={type} onChange={e=>setType(resolveApplicationType(e.target.value))}><option value="mission_owner">Mission owner</option><option value="business_partner">Business partner</option></select></label>
     <label>Legal name<input value={legalName} onChange={e=>setLegalName(e.target.value)} required /></label>
     <label>Public / organization name<input value={publicName} onChange={e=>setPublicName(e.target.value)} required /></label>
     <label>Contact email<input type="email" value={email} onChange={e=>setEmail(e.target.value)} required /></label>
