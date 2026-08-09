@@ -1,3 +1,28 @@
+# Mission 365 Production Release
+#
+# ---------------------------------------------------------------------------
+# PRODUCTION DEPLOYMENT IS OWNED BY THE VERCEL GIT INTEGRATION.
+#
+# This workflow does NOT deploy. It never runs `vercel build`, `vercel deploy`,
+# or `vercel deploy --prebuilt`. Those commands produce "upload"-source
+# deployments that carry no Git metadata, which is exactly how production ended
+# up on an untraceable build (dpl_8nkcNjGJ86roi9GhPjzDQ793he41: 30 files,
+# `npm install`, 11 routes) that no commit could be matched to.
+#
+# The only supported path to production is: push to `main` -> Vercel's Git
+# integration builds that commit -> Vercel promotes it to production.
+#
+# REQUIRED SETUP: the Git integration must be connected in the Vercel dashboard
+# under Project "mission-365" -> Settings -> Git (connect the
+# dolodorsey/mission-365 repository, production branch `main`). If it is not
+# connected, the verify-production job below will fail because the deployed
+# commit SHA will never match the pushed commit.
+#
+# This workflow's job is therefore twofold:
+#   1. release-gate       - prove the pushed commit is releasable.
+#   2. verify-production   - prove the live site is actually serving THAT commit.
+# ---------------------------------------------------------------------------
+
 name: Mission 365 Production Release
 
 on:
@@ -8,30 +33,82 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: mission365-production-release-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
-  VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+  PRODUCTION_URL: https://mission-365.vercel.app
 
 jobs:
-  validate-and-release:
+  release-gate:
+    name: Release gate
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           cache: npm
-      - run: npm ci
-      - run: npm audit --omit=dev --audit-level=high
-      - run: npx tsc --noEmit
-      - run: npm run build
-      - name: Deploy production through Vercel CLI
-        if: ${{ env.VERCEL_TOKEN != '' && env.VERCEL_ORG_ID != '' && env.VERCEL_PROJECT_ID != '' }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify built route manifest
+        run: npm run verify:routes
+
+  verify-production:
+    name: Verify production is serving this commit
+    needs: release-gate
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Poll /api/health until it reports this commit
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
         run: |
-          npx vercel@latest pull --yes --environment=production --token "$VERCEL_TOKEN"
-          npx vercel@latest build --prod --token "$VERCEL_TOKEN"
-          npx vercel@latest deploy --prebuilt --prod --token "$VERCEL_TOKEN"
-      - name: Explain skipped automatic deployment
-        if: ${{ env.VERCEL_TOKEN == '' || env.VERCEL_ORG_ID == '' || env.VERCEL_PROJECT_ID == '' }}
-        run: echo "Validation passed. Add VERCEL_TOKEN, VERCEL_ORG_ID, and VERCEL_PROJECT_ID repository secrets to enable automatic production deployment."
+          set -euo pipefail
+          attempts=60
+          delay=15
+          health_url="${PRODUCTION_URL}/api/health"
+          echo "Expecting production to report commit ${EXPECTED_SHA}"
+          echo "Polling ${health_url} (${attempts} attempts, ${delay}s apart)."
+
+          reported=""
+          for attempt in $(seq 1 "$attempts"); do
+            body="$(curl -fsS --max-time 20 "$health_url" || true)"
+            if [ -n "$body" ]; then
+              reported="$(printf '%s' "$body" | jq -r '.commit // "unknown"')"
+              echo "attempt ${attempt}/${attempts}: commit=${reported}"
+              if [ "$reported" = "$EXPECTED_SHA" ]; then
+                echo "Production is serving ${EXPECTED_SHA}."
+                printf '%s' "$body" | jq .
+                exit 0
+              fi
+            else
+              echo "attempt ${attempt}/${attempts}: no response from ${health_url}"
+            fi
+            sleep "$delay"
+          done
+
+          echo "::error::Production did not report commit ${EXPECTED_SHA} (last reported: ${reported:-none})."
+          echo "::error::Check that the Vercel Git integration is connected: Vercel dashboard -> project mission-365 -> Settings -> Git."
+          exit 1
