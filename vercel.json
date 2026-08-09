@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "ignoreCommand": "exit 1",
+  "git": {
+    "deploymentEnabled": {
+      "main": true,
+      "fix/native-vercel-git-release-*": true
+    }
+  }
+}
