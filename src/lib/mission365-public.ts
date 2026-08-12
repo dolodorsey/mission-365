@@ -13,3 +13,4 @@ export const MISSION365_NOTIFICATION_DISPATCH_URL = `${MISSION365_SUPABASE_URL}/
 export const MISSION365_RISK_SCAN_URL = `${MISSION365_SUPABASE_URL}/functions/v1/mission365-risk-scan`
 export const MISSION365_REGISTRY_URL = `${MISSION365_SUPABASE_URL}/functions/v1/mission365-registry`
 export const MISSION365_ENTRY_URL = `${MISSION365_SUPABASE_URL}/functions/v1/mission365-entry`
+export const MISSION365_PROFILE_MANAGER_URL = `${MISSION365_SUPABASE_URL}/functions/v1/mission365-profile-manager`
