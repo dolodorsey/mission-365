@@ -6,6 +6,11 @@ import { Eye, EyeOff, KeyRound, Mail } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 type Mode='login'|'signup'|'magic'
+function destination(){
+  if(typeof window==='undefined')return '/app'
+  const raw=new URLSearchParams(window.location.search).get('next')||'/app'
+  return raw.startsWith('/')&&!raw.startsWith('//')?raw:'/app'
+}
 export default function LoginPage(){
   const [email,setEmail]=useState('')
   const [password,setPassword]=useState('')
@@ -16,21 +21,22 @@ export default function LoginPage(){
 
   async function submit(event:FormEvent){
     event.preventDefault();setBusy(true);setMessage('')
+    const next=destination()
     if(mode==='magic'){
-      const {error}=await supabase.auth.signInWithOtp({email,options:{emailRedirectTo:`${window.location.origin}/app`}})
+      const {error}=await supabase.auth.signInWithOtp({email,options:{emailRedirectTo:`${window.location.origin}${next}`}})
       setBusy(false);setMessage(error?error.message:'Secure sign-in link sent. Open the email on this device to activate your Mission 365 session.');return
     }
-    const result=mode==='login'?await supabase.auth.signInWithPassword({email,password}):await supabase.auth.signUp({email,password,options:{emailRedirectTo:`${window.location.origin}/app`}})
+    const result=mode==='login'?await supabase.auth.signInWithPassword({email,password}):await supabase.auth.signUp({email,password,options:{emailRedirectTo:`${window.location.origin}${next}`}})
     setBusy(false)
     if(result.error){setMessage(result.error.message);return}
     if(mode==='signup'&&!result.data.session){setMessage('Account created. Check your email to verify your address.');return}
-    window.location.href='/app'
+    window.location.href=next
   }
 
   return <main className="status-page"><form className="status-card auth-card application-form" onSubmit={submit}>
     <p className="eyebrow">Mission 365 secure account</p>
     <h1>{mode==='login'?'Welcome back.':mode==='signup'?'Create your account.':'Email me a secure sign-in link.'}</h1>
-    <p>One confirmed account unlocks donor giving, mission applications, business partnerships, and approved reviewer access. Reviewer permissions are never granted from profile fields you can edit yourself.</p>
+    <p>One confirmed account unlocks personal giving, business giving, mission ownership, vendor participation, volunteering, and approved reviewer access. Reviewer permissions are never granted from profile fields you can edit yourself.</p>
     <label htmlFor="mission365-email">Email
       <input id="mission365-email" value={email} onChange={e=>setEmail(e.target.value)} type="email" autoComplete="email" autoCapitalize="none" spellCheck={false} required />
     </label>
@@ -46,7 +52,7 @@ export default function LoginPage(){
       <button className="button button-ghost" type="button" onClick={()=>setMode(mode==='login'?'signup':'login')}><KeyRound size={16}/>{mode==='login'?'Create account':'Use password sign-in'}</button>
       <button className="button button-ghost" type="button" onClick={()=>setMode('magic')}><Mail size={16}/>Email sign-in link</button>
     </div>
-    <p style={{fontSize:12}}>By creating or using an account, you agree to the applicable Mission 365 policies presented before giving, mission submission, or business sponsorship.</p>
+    <p style={{fontSize:12}}>By creating or using an account, you agree to the applicable Mission 365 policies presented before giving, mission submission, vendor participation, volunteering, or business sponsorship.</p>
     <div><Link href="/legal">Legal & policies</Link> · <Link href="/">Return home</Link></div>
   </form></main>
 }
