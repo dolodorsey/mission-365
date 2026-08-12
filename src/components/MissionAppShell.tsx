@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 const nav = [
   ['Donor','/app/donor'],
   ['Mission Owner','/app/mission-owner'],
+  ['Registry','/app/mission-owner/registry'],
   ['Business','/app/business'],
   ['Admin','/app/admin'],
 ]
