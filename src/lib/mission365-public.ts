@@ -12,3 +12,4 @@ export const MISSION365_PAYOUT_RELEASE_URL = `${MISSION365_SUPABASE_URL}/functio
 export const MISSION365_NOTIFICATION_DISPATCH_URL = `${MISSION365_SUPABASE_URL}/functions/v1/mission365-notification-dispatch`
 export const MISSION365_RISK_SCAN_URL = `${MISSION365_SUPABASE_URL}/functions/v1/mission365-risk-scan`
 export const MISSION365_REGISTRY_URL = `${MISSION365_SUPABASE_URL}/functions/v1/mission365-registry`
+export const MISSION365_ENTRY_URL = `${MISSION365_SUPABASE_URL}/functions/v1/mission365-entry`
