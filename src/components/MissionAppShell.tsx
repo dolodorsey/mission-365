@@ -5,9 +5,10 @@ const nav = [
   ['Personal Donor','/app/donor'],
   ['Business Donor','/app/business'],
   ['Mission Owner','/app/mission-owner'],
+  ['Profiles','/app/mission-owner/profile'],
+  ['Registry','/app/mission-owner/registry'],
   ['Vendor','/app/vendor'],
   ['Volunteer','/app/volunteer'],
-  ['Registry','/app/mission-owner/registry'],
   ['Admin','/app/admin'],
 ]
 
