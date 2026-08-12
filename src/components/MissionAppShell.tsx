@@ -1,24 +1,14 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
-
-const nav = [
-  ['Personal Donor','/app/donor'],
-  ['Business Donor','/app/business'],
-  ['Mission Owner','/app/mission-owner'],
-  ['Profiles','/app/mission-owner/profile'],
-  ['Registry','/app/mission-owner/registry'],
-  ['Vendor','/app/vendor'],
-  ['Volunteer','/app/volunteer'],
-  ['Admin','/app/admin'],
-]
+import AppRoleNav from './AppRoleNav'
 
 export function MissionAppShell({title,subtitle,children}:{title:string;subtitle:string;children:ReactNode}){
   return <main className="status-page"><section className="status-card" style={{maxWidth:1180,width:'94vw',textAlign:'left'}}>
-    <div style={{display:'flex',gap:12,justifyContent:'space-between',alignItems:'center',flexWrap:'wrap'}}>
-      <Link className="brand" href="/"><span className="brand-mark">M</span><span>MISSION <b>365</b></span></Link>
-      <nav className="app-role-nav">{nav.map(([label,href])=><Link key={href} className="button button-ghost button-compact" href={href}>{label}</Link>)}</nav>
+    <div style={{display:'flex',gap:18,justifyContent:'space-between',alignItems:'center',flexWrap:'wrap'}}>
+      <Link className="brand" href="/app"><span className="brand-mark">M</span><span>MISSION <b>365</b></span></Link>
+      <AppRoleNav/>
     </div>
-    <div style={{marginTop:32}}><p className="eyebrow">MISSION 365 OPERATING APP</p><h1>{title}</h1><p>{subtitle}</p></div>
+    <div style={{marginTop:32}}><p className="eyebrow">MISSION 365</p><h1>{title}</h1><p>{subtitle}</p></div>
     <div style={{marginTop:24}}>{children}</div>
   </section></main>
 }
