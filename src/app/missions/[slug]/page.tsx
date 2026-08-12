@@ -11,6 +11,7 @@ export const dynamic='force-dynamic'
 type Props={params:Promise<{slug:string}>}
 const label=(v:string)=>String(v||'').replaceAll('_',' ').replace(/\b\w/g,c=>c.toUpperCase())
 const isVideo=(url:string|null)=>Boolean(url&&url.toLowerCase().includes('.mp4'))
+const isPdf=(url:string|null)=>Boolean(url&&url.toLowerCase().split('?')[0].endsWith('.pdf'))
 
 export default async function MissionPage({params}:Props){
  const {slug}=await params
@@ -40,7 +41,7 @@ export default async function MissionPage({params}:Props){
  const percent=fundable?Math.min(100,Math.round(Number(mission.funded_amount_cents)/Math.max(1,Number(mission.goal_amount_cents))*100)):0
  return <main className="status-page"><div className="status-card mission-profile-shell">
   <section className="mission-profile-hero">
-   <div className="mission-profile-cover">{profile.cover_media_url?isVideo(profile.cover_media_url)?<video src={profile.cover_media_url} autoPlay muted loop playsInline/>:<img src={profile.cover_media_url} alt={`${profile.title} profile cover`}/>:<div className="mission-cover-empty"><HandHeart size={48}/><span>Mission 365</span></div>}</div>
+   <div className="mission-profile-cover">{profile.cover_media_url?isVideo(profile.cover_media_url)?<video src={profile.cover_media_url} autoPlay muted loop playsInline/>:isPdf(profile.cover_media_url)?<embed src={`${profile.cover_media_url}#toolbar=0&navpanes=0&scrollbar=0&page=1`} type="application/pdf"/>:<img src={profile.cover_media_url} alt={`${profile.title} profile cover`}/>:<div className="mission-cover-empty"><HandHeart size={48}/><span>Mission 365</span></div>}</div>
    <div className="mission-profile-intro"><div className="row-actions wrap"><span className={`status-pill ${profile.lifecycle_status==='current'?'status-active':''}`}>{profile.lifecycle_status==='current'?<><Clock3 size={13}/> Current mission</>:<><Archive size={13}/> Past mission</>}</span><span className="status-pill">{profile.category}</span>{profile.lifecycle_status==='current'&&<span className="status-pill">Funding: {label(profile.fundraising_status)}</span>}{sources?.length?<span className="status-pill status-verified"><FileCheck2 size={13}/> Source record attached</span>:null}</div><h1>{profile.title}</h1><p>{profile.summary}</p><p className="muted">{[profile.city,profile.region].filter(Boolean).join(', ')}</p>{mission&&<SaveMissionButton missionId={mission.id}/>}</div>
   </section>
 
