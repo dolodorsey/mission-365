@@ -1,60 +1,53 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.112.0'
-
-const corsHeaders={
-  'Access-Control-Allow-Origin':'*',
-  'Access-Control-Allow-Headers':'authorization, apikey, content-type',
-  'Access-Control-Allow-Methods':'POST, OPTIONS',
-}
+const cors={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization, apikey, content-type','Access-Control-Allow-Methods':'POST, OPTIONS'}
+const json=(body:unknown,status=200)=>Response.json(body,{status,headers:{...cors,'cache-control':'no-store'}})
 function publicKey(){const modern=Deno.env.get('SUPABASE_PUBLISHABLE_KEYS');return modern?JSON.parse(modern).default:Deno.env.get('SUPABASE_ANON_KEY')!}
 function secretKey(){const modern=Deno.env.get('SUPABASE_SECRET_KEYS');return modern?JSON.parse(modern).default:Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!}
 function adminClient(){return createClient(Deno.env.get('SUPABASE_URL')!,secretKey(),{auth:{persistSession:false,autoRefreshToken:false}})}
 function userClient(auth:string){return createClient(Deno.env.get('SUPABASE_URL')!,publicKey(),{auth:{persistSession:false,autoRefreshToken:false},global:{headers:{Authorization:auth}}})}
-
+async function stripeSecret(db:any){let key=Deno.env.get('STRIPE_SECRET_KEY')||'';if(!key){const {data}=await db.rpc('mission365_get_runtime_secret',{secret_name:'stripe_api_key'});key=String(data||'')}return key}
+async function roleFor(db:any,user:any){const meta=String(user.app_metadata?.mission365_role||'');if(['admin','finance'].includes(meta))return meta;if(user.email_confirmed_at&&user.email){const {data}=await db.from('mission365_reviewer_access').select('role').eq('email',user.email.toLowerCase()).eq('active',true).maybeSingle();if(['admin','finance'].includes(String(data?.role||'')))return String(data.role)}return ''}
+async function notifyOrg(db:any,organizationId:string,type:string,title:string,body:string,data:any){const {data:members}=await db.from('mission365_organization_members').select('user_id').eq('organization_id',organizationId);for(const m of members||[])await db.from('mission365_notifications').insert({user_id:m.user_id,notification_type:type,title,body,data})}
+async function availableForMission(db:any,missionId:string,excludePayoutId?:string){const {data:donations}=await db.from('mission365_donations').select('amount_cents,refunded_amount_cents,platform_fee_cents,status').eq('mission_id',missionId).eq('settlement_mode','mission_payout').in('status',['succeeded','partially_refunded']);let q=db.from('mission365_payouts').select('id,amount_cents').eq('mission_id',missionId).in('status',['approved','processing','paid']);if(excludePayoutId)q=q.neq('id',excludePayoutId);const {data:prior}=await q;const proceeds=(donations||[]).reduce((sum:number,row:any)=>sum+Math.max(0,Number(row.amount_cents)-Number(row.refunded_amount_cents||0)-Number(row.platform_fee_cents||0)),0);const committed=(prior||[]).reduce((sum:number,row:any)=>sum+Number(row.amount_cents||0),0);return Math.max(0,proceeds-committed)}
 Deno.serve(async(req:Request)=>{
-  if(req.method==='OPTIONS')return new Response('ok',{headers:corsHeaders})
-  if(req.method!=='POST')return Response.json({error:'Method not allowed'},{status:405,headers:corsHeaders})
+  if(req.method==='OPTIONS')return new Response('ok',{headers:cors})
+  if(req.method!=='POST')return json({error:'Method not allowed'},405)
   try{
-    const auth=req.headers.get('authorization')||''
-    const token=auth.startsWith('Bearer ')?auth.slice(7):''
-    const scoped=userClient(auth)
-    const {data:{user},error:userError}=await scoped.auth.getUser(token)
-    if(userError||!user)return Response.json({error:'Authentication required'},{status:401,headers:corsHeaders})
-    const role=String(user.app_metadata?.mission365_role||'donor')
-    if(!['admin','finance'].includes(role))return Response.json({error:'Mission 365 finance authorization required'},{status:403,headers:corsHeaders})
-
-    const {payoutId}=await req.json()
-    if(!payoutId)return Response.json({error:'payoutId is required'},{status:400,headers:corsHeaders})
-    const admin=adminClient()
-    let stripeSecret=Deno.env.get('STRIPE_SECRET_KEY')||''
-    if(!stripeSecret){const {data}=await admin.rpc('mission365_get_runtime_secret',{secret_name:'stripe_api_key'});stripeSecret=String(data||'')}
-    if(!stripeSecret||stripeSecret.startsWith('REPLACE_WITH_'))return Response.json({error:'Mission 365 payouts are not activated yet'},{status:503,headers:corsHeaders})
-
-    const {data:payout,error:payoutError}=await admin.from('mission365_payouts').select('id,mission_id,organization_id,amount_cents,currency,status').eq('id',payoutId).single()
-    if(payoutError||!payout)return Response.json({error:'Payout not found'},{status:404,headers:corsHeaders})
-    if(payout.status!=='approved')return Response.json({error:'Payout must be approved before release'},{status:409,headers:corsHeaders})
-    const {data:account}=await admin.from('mission365_payout_accounts').select('stripe_account_id').eq('organization_id',payout.organization_id).single()
-    if(!account?.stripe_account_id)return Response.json({error:'Mission owner has no connected payout account'},{status:409,headers:corsHeaders})
-
-    const accountResponse=await fetch(`https://api.stripe.com/v2/core/accounts/${account.stripe_account_id}`,{headers:{Authorization:`Bearer ${stripeSecret}`,'Stripe-Version':'2026-06-24.dahlia'}})
-    const connected=await accountResponse.json()
-    if(!accountResponse.ok)throw new Error(connected?.error?.message||'Connected account check failed')
-    const transferStatus=connected?.configuration?.recipient?.capabilities?.stripe_balance?.stripe_transfers?.status
-    await admin.from('mission365_payout_accounts').update({transfers_status:transferStatus==='active'?'active':'restricted',last_checked_at:new Date().toISOString()}).eq('organization_id',payout.organization_id)
-    if(transferStatus!=='active')return Response.json({error:'Connected account is not transfer-ready'},{status:409,headers:corsHeaders})
-
-    const {data:donations}=await admin.from('mission365_donations').select('amount_cents,platform_fee_cents').eq('mission_id',payout.mission_id).eq('status','succeeded')
-    const {data:prior}=await admin.from('mission365_payouts').select('amount_cents').eq('mission_id',payout.mission_id).in('status',['approved','processing','paid']).neq('id',payout.id)
-    const available=(donations||[]).reduce((sum,row)=>sum+Number(row.amount_cents)-Number(row.platform_fee_cents),0)-(prior||[]).reduce((sum,row)=>sum+Number(row.amount_cents),0)
-    if(Number(payout.amount_cents)>available)return Response.json({error:'Payout exceeds cleared mission proceeds',availableCents:Math.max(0,available)},{status:409,headers:corsHeaders})
-
-    await admin.from('mission365_payouts').update({status:'processing'}).eq('id',payout.id).eq('status','approved')
-    const params=new URLSearchParams({amount:String(payout.amount_cents),currency:String(payout.currency||'usd'),destination:account.stripe_account_id,transfer_group:`mission365_${payout.mission_id}`})
-    params.set('metadata[payout_id]',payout.id);params.set('metadata[mission_id]',payout.mission_id)
-    const transferResponse=await fetch('https://api.stripe.com/v1/transfers',{method:'POST',headers:{Authorization:`Bearer ${stripeSecret}`,'Stripe-Version':'2026-06-24.dahlia','Content-Type':'application/x-www-form-urlencoded','Idempotency-Key':`mission365-payout-${payout.id}`},body:params.toString()})
-    const transfer=await transferResponse.json()
-    if(!transferResponse.ok){await admin.from('mission365_payouts').update({status:'failed',failure_reason:transfer?.error?.message||'Stripe transfer failed'}).eq('id',payout.id);throw new Error(transfer?.error?.message||'Stripe transfer failed')}
-    await admin.from('mission365_payouts').update({status:'paid',stripe_transfer_id:transfer.id,updated_at:new Date().toISOString()}).eq('id',payout.id)
-    await admin.from('mission365_audit_log').insert({actor_user_id:user.id,action:'payout.released',entity_type:'payout',entity_id:payout.id,after_state:{status:'paid',stripe_transfer_id:transfer.id},metadata:{mission_id:payout.mission_id,organization_id:payout.organization_id}})
-    return Response.json({released:true,transferId:transfer.id},{headers:corsHeaders})
-  }catch(error){console.error('mission365 payout release failed',error);return Response.json({error:error instanceof Error?error.message:'Payout release failed'},{status:500,headers:corsHeaders})}
+    const auth=req.headers.get('authorization')||'';const token=auth.startsWith('Bearer ')?auth.slice(7):'';const {data:{user},error:userError}=await userClient(auth).auth.getUser(token);if(userError||!user)return json({error:'Authentication required'},401)
+    const db=adminClient();const role=await roleFor(db,user);if(!role)return json({error:'Mission 365 finance authorization required'},403)
+    const body=await req.json();const payoutId=String(body?.payoutId||'');const action=String(body?.action||'release');if(!payoutId)return json({error:'payoutId is required'},400)
+    const {data:payout,error:payoutError}=await db.from('mission365_payouts').select('*').eq('id',payoutId).single();if(payoutError||!payout)return json({error:'Payout not found'},404)
+    const {count:riskCount}=await db.from('mission365_risk_events').select('id',{count:'exact',head:true}).eq('status','open').in('severity',['high','critical']).or(`mission_id.eq.${payout.mission_id},organization_id.eq.${payout.organization_id}`)
+    if(riskCount&&action!=='reverse')return json({error:'Payout is blocked while a high-severity risk review is open.'},423)
+    const available=await availableForMission(db,payout.mission_id,payout.id);if(Number(payout.amount_cents)>available&&['approve','release'].includes(action))return json({error:'Payout exceeds cleared mission proceeds',availableCents:available},409)
+    if(action==='approve'){
+      if(payout.status!=='pending_review')return json({error:'Only pending-review payouts can be approved.'},409)
+      const {data:updated,error}=await db.from('mission365_payouts').update({status:'approved',approved_by:user.id,approved_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',payoutId).select('*').single();if(error)throw error
+      await db.from('mission365_audit_log').insert({actor_user_id:user.id,action:'payout.approved',entity_type:'payout',entity_id:payoutId,before_state:{status:payout.status},after_state:{status:'approved'},metadata:{mission_id:payout.mission_id,organization_id:payout.organization_id}})
+      await notifyOrg(db,payout.organization_id,'payout_approved','Payout approved','A Mission 365 payout request has been approved.',{payout_id:payoutId,mission_id:payout.mission_id})
+      return json({payout:updated,availableCents:available})
+    }
+    const key=await stripeSecret(db);if(!key||key.startsWith('REPLACE_WITH_'))return json({error:'Mission 365 payouts are credential-gated until the restricted Stripe API key is installed.'},503)
+    if(action==='reverse'){
+      if(payout.status!=='paid'||!payout.stripe_transfer_id)return json({error:'Only paid Stripe transfers can be reversed.'},409)
+      const params=new URLSearchParams();params.set('metadata[payout_id]',payout.id);params.set('metadata[mission_id]',payout.mission_id)
+      const response=await fetch(`https://api.stripe.com/v1/transfers/${encodeURIComponent(payout.stripe_transfer_id)}/reversals`,{method:'POST',headers:{Authorization:`Bearer ${key}`,'Stripe-Version':'2026-06-24.dahlia','Content-Type':'application/x-www-form-urlencoded','Idempotency-Key':`m365-reverse-${payout.id}`},body:params.toString()});const reversal=await response.json();if(!response.ok)throw new Error(reversal?.error?.message||'Stripe transfer reversal failed')
+      const {data:updated,error}=await db.from('mission365_payouts').update({status:'reversed',stripe_reversal_id:reversal.id,reversed_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',payout.id).select('*').single();if(error)throw error
+      await db.from('mission365_audit_log').insert({actor_user_id:user.id,action:'payout.reversed',entity_type:'payout',entity_id:payout.id,before_state:{status:'paid'},after_state:{status:'reversed',stripe_reversal_id:reversal.id},metadata:{mission_id:payout.mission_id,organization_id:payout.organization_id}})
+      await notifyOrg(db,payout.organization_id,'payout_reversed','Payout reversed','A Mission 365 payout was reversed and requires review.',{payout_id:payout.id,mission_id:payout.mission_id})
+      return json({payout:updated,reversalId:reversal.id})
+    }
+    if(action!=='release')return json({error:'Unsupported action'},400)
+    if(payout.status!=='approved')return json({error:'Payout must be approved before release'},409)
+    const {data:account}=await db.from('mission365_payout_accounts').select('*').eq('organization_id',payout.organization_id).single();if(!account?.stripe_account_id)return json({error:'Mission owner has no connected payout account'},409)
+    const accountResponse=await fetch(`https://api.stripe.com/v2/core/accounts/${encodeURIComponent(account.stripe_account_id)}?include[]=configuration.recipient&include[]=requirements`,{headers:{Authorization:`Bearer ${key}`,'Stripe-Version':'2026-06-24.preview'}});const connected=await accountResponse.json();if(!accountResponse.ok)throw new Error(connected?.error?.message||'Connected account check failed')
+    const transferStatus=String(connected?.configuration?.recipient?.capabilities?.stripe_balance?.stripe_transfers?.status||'inactive');const due=connected?.requirements?.entries||connected?.requirements||[];await db.from('mission365_payout_accounts').update({transfers_status:transferStatus==='active'?'active':'restricted',onboarding_status:transferStatus==='active'?'ready':(Array.isArray(due)&&due.length?'requirements_due':'pending'),requirements_due:due,last_checked_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('organization_id',payout.organization_id);if(transferStatus!=='active')return json({error:'Connected account is not transfer-ready'},409)
+    await db.from('mission365_payouts').update({status:'processing',updated_at:new Date().toISOString()}).eq('id',payout.id).eq('status','approved')
+    const params=new URLSearchParams({amount:String(payout.amount_cents),currency:String(payout.currency||'usd'),destination:account.stripe_account_id,transfer_group:`mission365_${payout.mission_id}`});params.set('metadata[payout_id]',payout.id);params.set('metadata[mission_id]',payout.mission_id)
+    const transferResponse=await fetch('https://api.stripe.com/v1/transfers',{method:'POST',headers:{Authorization:`Bearer ${key}`,'Stripe-Version':'2026-06-24.dahlia','Content-Type':'application/x-www-form-urlencoded','Idempotency-Key':`mission365-payout-${payout.id}`},body:params.toString()});const transfer=await transferResponse.json();if(!transferResponse.ok){await db.from('mission365_payouts').update({status:'failed',failure_reason:transfer?.error?.message||'Stripe transfer failed',updated_at:new Date().toISOString()}).eq('id',payout.id);throw new Error(transfer?.error?.message||'Stripe transfer failed')}
+    const {data:updated,error}=await db.from('mission365_payouts').update({status:'paid',stripe_transfer_id:transfer.id,updated_at:new Date().toISOString()}).eq('id',payout.id).select('*').single();if(error)throw error
+    await db.from('mission365_audit_log').insert({actor_user_id:user.id,action:'payout.released',entity_type:'payout',entity_id:payout.id,after_state:{status:'paid',stripe_transfer_id:transfer.id},metadata:{mission_id:payout.mission_id,organization_id:payout.organization_id}})
+    await notifyOrg(db,payout.organization_id,'payout_paid','Payout released','A Mission 365 payout has been transferred to the connected Stripe account.',{payout_id:payout.id,mission_id:payout.mission_id})
+    return json({payout:updated,transferId:transfer.id})
+  }catch(error){console.error('mission365 payout operation failed',error);return json({error:error instanceof Error?error.message:'Payout operation failed'},500)}
 })
