@@ -9,6 +9,8 @@ const roles = [
   [Users2, 'Mission owners', 'Apply for verification, publish a specific need, and report progress against milestones.'],
 ] as const
 
+const PROVIDER_ONBOARDING_URL = 'https://forms.thekollectivehospitality.com/f/mission-365/provider-onboarding'
+
 export default function Home() {
   return <main>
     <nav className="nav-shell" aria-label="Primary navigation">
@@ -45,9 +47,9 @@ export default function Home() {
       <article><span><ShieldCheck/></span><div><h3>No manufactured impact</h3><p>Only reviewed missions and recorded activity appear in totals.</p></div></article>
     </div></section>
 
-    <section className="partner-section"><div className="partner-art"><Image src="/brand/mission365-partner.png" alt="Mission 365 partnership artwork" fill sizes="(max-width:800px) 100vw,46vw"/></div><div className="partner-copy"><p className="eyebrow">Partners with purpose</p><h2>Turn community support into accountable action.</h2><p>Businesses can sponsor verified missions, support employee giving, and build a clear record of local impact.</p><Link className="button" href="/apply?role=business">Join as a business <ArrowRight size={18}/></Link></div></section>
+    <section className="partner-section"><div className="partner-art"><Image src="/brand/mission365-partner.png" alt="Mission 365 partnership artwork" fill sizes="(max-width:800px) 100vw,46vw"/></div><div className="partner-copy"><p className="eyebrow">Partners with purpose</p><h2>Turn community support into accountable action.</h2><p>Businesses can sponsor verified missions, support employee giving, and build a clear record of local impact. Service providers can also complete full network onboarding so approved mission needs can be matched with qualified vendors.</p><div className="row-actions wrap"><Link className="button" href="/apply?role=business">Join as a business <ArrowRight size={18}/></Link><a className="button button-ghost" href={PROVIDER_ONBOARDING_URL}>Service provider onboarding <ArrowRight size={18}/></a></div></div></section>
 
     <section className="final-cta"><p className="eyebrow">Give well. Report honestly. Repeat.</p><h2>365 days. Endless opportunities to help.</h2><div><Link href="/missions" className="button">Explore missions</Link><Link href="/apply" className="button button-ghost">Submit a mission</Link></div></section>
-    <footer><div className="brand"><span className="brand-mark">M</span><span>MISSION <b>365</b></span></div><p>© 2026 Mission 365. A Kollective Hospitality Group platform.</p><div><Link href="/missions">Missions</Link><Link href="/apply">Apply</Link><Link href="/download">Apps</Link></div></footer>
+    <footer><div className="brand"><span className="brand-mark">M</span><span>MISSION <b>365</b></span></div><p>© 2026 Mission 365. A Kollective Hospitality Group platform.</p><div><Link href="/missions">Missions</Link><Link href="/apply">Apply</Link><a href={PROVIDER_ONBOARDING_URL}>Provider onboarding</a><Link href="/download">Apps</Link></div></footer>
   </main>
 }
