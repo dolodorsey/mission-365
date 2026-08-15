@@ -1,75 +1,53 @@
 import { NextResponse } from 'next/server'
-import {
-  MISSION365_LAUNCH_STATUS_URL,
-  MISSION365_SUPABASE_PUBLISHABLE_KEY,
-  MISSION365_SUPABASE_URL,
-} from '@/lib/mission365-public'
+
+const backend = 'https://rwpcqeiukrektpjqkpdx.supabase.co/functions/v1/mission365-launch-status'
 
 export const dynamic = 'force-dynamic'
 
-const NO_STORE = { 'Cache-Control': 'no-store' }
-
-/**
- * Git traceability for a running deployment.
- *
- * Only these three build-metadata variables are read. Never widen this to echo
- * arbitrary `process.env` values — this endpoint is public and uncached.
- */
-function buildInfo() {
-  const commit = process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.GITHUB_SHA ?? 'unknown'
-  const ref = process.env.VERCEL_GIT_COMMIT_REF ?? null
-  const deploymentId = process.env.VERCEL_DEPLOYMENT_ID ?? null
-  return { commit, ref, ...(deploymentId ? { deploymentId } : {}) }
-}
-
 export async function GET() {
-  try {
-    const response = await fetch(MISSION365_LAUNCH_STATUS_URL, {
-      headers: { apikey: MISSION365_SUPABASE_PUBLISHABLE_KEY },
-      cache: 'no-store',
-    })
-    const launch = response.ok ? await response.json() : null
+  let launch: Record<string, unknown> | null = null
+  let backendStatus = 'degraded'
 
-    return NextResponse.json(
-      {
-        service: 'mission-365',
-        status: response.ok ? 'ok' : 'degraded',
-        build: 'launch-completion',
-        ...buildInfo(),
-        backend: {
-          provider: 'supabase',
-          isolated: true,
-          url: MISSION365_SUPABASE_URL,
-        },
-        runtimes: {
-          applications: 'supabase-rls',
-          verification: 'supabase-edge',
-          checkout: 'supabase-edge',
-          stripeWebhook: 'supabase-edge',
-          connect: 'supabase-edge',
-          payouts: 'supabase-edge',
-          risk: 'supabase-edge',
-          notifications: 'supabase-edge',
-        },
-        payments: launch?.payments || {
-          stripeApi: false,
-          webhook: false,
-          liveGiving: false,
-        },
-        verificationCandidates: launch?.verificationCandidates ?? null,
-        liveMissions: launch?.liveMissions ?? null,
-      },
-      { status: response.ok ? 200 : 503, headers: NO_STORE },
-    )
-  } catch (error) {
-    return NextResponse.json(
-      {
-        service: 'mission-365',
-        status: 'degraded',
-        ...buildInfo(),
-        error: error instanceof Error ? error.message : 'Health check failed',
-      },
-      { status: 503, headers: NO_STORE },
-    )
+  try {
+    const response = await fetch(backend, { cache: 'no-store' })
+    if (response.ok) {
+      launch = await response.json()
+      backendStatus = 'ok'
+    }
+  } catch {
+    backendStatus = 'degraded'
   }
+
+  return NextResponse.json(
+    {
+      service: 'mission-365',
+      status: backendStatus,
+      build: 'launch-completion',
+      commit: process.env.VERCEL_GIT_COMMIT_SHA || 'local',
+      ref: process.env.VERCEL_GIT_COMMIT_REF || 'local',
+      deploymentId: process.env.VERCEL_DEPLOYMENT_ID || null,
+      backend: {
+        provider: 'supabase',
+        isolated: true,
+        url: 'https://rwpcqeiukrektpjqkpdx.supabase.co',
+      },
+      runtimes: {
+        applications: 'supabase-rls',
+        verification: 'supabase-edge',
+        checkout: 'supabase-edge',
+        stripeWebhook: 'supabase-edge',
+        connect: 'supabase-edge',
+        payouts: 'supabase-edge',
+        refunds: 'supabase-edge',
+        registry: 'supabase-edge',
+        risk: 'supabase-edge',
+        notifications: 'supabase-edge',
+      },
+      ...(launch || {}),
+    },
+    {
+      status: backendStatus === 'ok' ? 200 : 503,
+      headers: { 'cache-control': 'no-store' },
+    },
+  )
 }

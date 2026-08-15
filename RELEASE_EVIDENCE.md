@@ -1,92 +1,108 @@
 # MISSION 365 release evidence
 
-Updated: 2026-08-08
+Updated: 2026-08-15
 
 ## Product boundary
 
 - MISSION 365 remains its own brand, repository, application, Supabase project, payment ledger, and runtime boundary.
-- Production backend: dedicated `MISSION 365` Supabase project in `us-east-1`.
-- Web: Next.js on Vercel. Protected verification, payment, Connect, risk, notification, and payout operations: dedicated Supabase Edge Runtime.
-- Payment architecture: Stripe Checkout + Billing + Connect, Separate Charges and Transfers, 5% Mission 365 platform fee modeled by transferring less to verified recipients.
+- Production backend: dedicated `MISSION 365` Supabase project `rwpcqeiukrektpjqkpdx` in `us-east-1`.
+- Web: Next.js on Vercel project `prj_Tuq5y7kTRpAxgyvgfrT0jEQuqeOK`.
+- Canonical web target: `https://mission-365.vercel.app`.
+- Repository: `dolodorsey/mission-365` on branch `main`.
+- Production deployment is owned by the Vercel Git integration. Pushes to `main` are built and promoted by Vercel, and the release workflow verifies that `/api/health` reports the exact pushed commit.
 
-## Completed product and backend
+## Current production state
 
-- Donor, Mission Owner, Business, and Admin operating workspaces are production-backed rather than static placeholder dashboards.
-- Mission-owner workflow: application → organization verification → private evidence → Stripe recipient onboarding → agreement → mission → milestones → review → publication → impact evidence → payout request.
-- Admin workflow: expiring private-evidence links, document accept/reject, organization verification, mission moderation, milestone/impact verification, payout approval/release/reversal, risk escalation/resolution, notification dispatch.
-- Donor workflow: one-time/monthly giving, net-after-refund ledger, receipts, saved missions, verified impact timeline, notification preferences/inbox, CSV export, Stripe Customer Portal for recurring-plan/payment-method management.
-- Business workflow: verification handoff, sponsor terms, sponsorship commitments, employee/matched-giving settings, secure sponsorship funding, cancellation, reconciliation, impact export.
-- Public mission page: verified organization, funding totals, milestones, published impact, save/follow action, explicit donor/tax language.
-- Legal/policy hub: platform terms, privacy, donor/refund, Mission Owner, business sponsor, acceptable-use/fraud, tax/receipt language. Marked as operating draft requiring counsel review before broad scale.
+- Production web is healthy and serving from the Git-linked Vercel project.
+- `/api/health` reads the dedicated Supabase launch-status endpoint instead of returning a static success response.
+- Production runtime coverage includes applications/RLS, verification, checkout, Stripe webhook reconciliation, Connect, payouts, refunds, registry/vendor settlement, risk, and notifications.
+- Current launch cohort: 5 organizations under review.
+- Current mission queue: 4 missions under review.
+- Current legitimate public activity remains 0 published missions, 0 donations, and 0 receipts.
+- Current launch cohort has 0 verification documents, 0 accepted verification documents, 0 transfer-ready recipient accounts, and 0 mission milestones.
+- No fake verification, milestones, donations, receipts, or public impact records should be inserted to manufacture launch readiness.
 
-## Financial integrity and Stripe lifecycle
+## Authentication and authorization
 
-- Checkout requires authenticated user, current donor terms, published mission, verified mission owner, transfer-ready payout account, no high/critical risk hold, and per-user rate limit.
-- Checkout stores donor/mission/giving-plan/donation metadata and supports one-time + monthly giving.
-- Recurring Checkout preserves/reuses Stripe customer identifiers when available.
-- Webhook reconciliation handles Checkout completed/async success/async failure/expiry, recurring invoices, failed/action-required invoices, subscription update/cancel, PaymentIntent failures, refunds, disputes, and transfer reversals/updates.
-- Partial refunds reduce both Mission 365 mission funding and business sponsorship funded totals by the actual refunded delta.
-- Payouts use approve → release → reverse controls with cleared-proceeds calculation, risk holds, transfer-readiness refresh, idempotent Stripe transfers, and transfer reversals.
-- Stripe Accounts v2 recipient service supports account creation, status refresh, hosted onboarding links, embedded Account Sessions, and Express Dashboard links once the Mission 365 restricted key is installed.
-- Canonical live Stripe webhook endpoint remains enabled on `2026-06-24.dahlia` with the expanded production event set.
+- Private user/admin/finance Edge Functions require Supabase platform JWT verification and also retain their existing in-function authorization checks.
+- Authorization decisions use server-controlled memberships, reviewer records, or `app_metadata`; user-editable metadata is not used for authorization.
+- The Stripe webhook remains intentionally public at the Supabase gateway because Stripe does not send Supabase user JWTs; the function verifies Stripe's signature before processing an event.
+- The launch-status endpoint remains intentionally public and returns readiness/count data only.
+- Financial donation detail in the protected admin queue is limited to `admin` and `finance` roles; ordinary reviewers retain verification access without donor/payment detail.
+
+## Payment and settlement integrity
+
+- Stripe Checkout supports authenticated one-time and monthly giving, personal/business donor identity, donor terms acceptance, mission verification/publish checks, payout-readiness checks, high/critical risk holds, server-side rate limiting, and idempotency.
+- Stripe webhook reconciliation handles Checkout completion/failure/expiry, invoices and subscriptions, PaymentIntent failures, refunds, disputes, transfer events, receipts, and notification records.
+- Business sponsorship checkout writes `donor_business` identity consistently across user roles, giving plans, donations, and Stripe metadata.
+- Financial reconciliation triggers use cumulative net funded value and safely handle donation mission reassignment and sponsorship reassignment.
+- `vendor_direct` registry gifts count toward mission/registry funded impact but are excluded from the Mission Owner payout pool. This prevents the same net funds from being paid once to a vendor and again to a Mission Owner.
+- Protected refund operations are restricted to `admin`/`finance` users.
+- Vendor-direct refunds request both `reverse_transfer=true` and `refund_application_fee=true` from Stripe so the connected-vendor transfer and platform application fee are reversed proportionally with the refund.
+- Mission-payout refunds are blocked if the post-refund cleared proceeds would undercollateralize Mission Owner payouts already requested, approved, processing, or paid.
+- Refund requests are idempotent and auditable; final donation/refund state remains reconciled from Stripe webhook events.
+
+## Stripe / Connect readiness
+
+- Platform Stripe account has card payments, transfers, and payouts enabled.
+- Canonical live Mission 365 Stripe webhook is enabled and points to the dedicated Supabase webhook function.
+- Stripe webhook secret is installed in the protected Mission 365 runtime.
+- The restricted Mission 365 Stripe API key is **not yet installed** in the Supabase Edge environment/runtime vault, so production correctly reports `stripeApi: false` and `liveGiving: false`.
+- There are currently 0 connected recipient accounts.
+- Mission Owner and registry-vendor recipient onboarding use Stripe Connect recipient/Express account flows and remain gated behind verified organizations plus the restricted Stripe credential.
+
+## Verification and publication gates
+
+An organization cannot be approved without the required accepted verification documents. A mission cannot be published until its organization is verified, the payout destination is transfer-ready, at least one measurable milestone exists, and no open high/critical risk event blocks release.
+
+Current real launch work therefore remains:
+
+1. Upload legitimate verification evidence for a launch organization.
+2. Review and accept the required evidence; then approve the organization.
+3. Install the restricted Mission 365 live Stripe API key in the protected Supabase runtime.
+4. Complete the organization's Stripe recipient onboarding and confirm transfers are active.
+5. Add at least one legitimate measurable milestone to the first mission.
+6. Review and publish the first legitimate mission.
+7. Run controlled real payment QA: one-time gift, recurring gift, receipt, refund, vendor-direct reversal where applicable, payout approval/release/reversal.
 
 ## Security and operations
 
-- Private evidence stays in `mission365-private`; reviewer access uses short-lived signed URLs.
-- Authorization decisions use server-side membership/reviewer records or Supabase app metadata, not user-editable metadata.
-- RLS remains enabled; intentionally internal tables are deny-by-default to ordinary clients.
-- Checkout has server-side rate limiting.
+- RLS is enabled across exposed application tables.
+- Supabase security advisor currently reports INFO-only `RLS enabled/no policy` notices on intentionally server-only deny-by-default tables; no new critical security lint was introduced by the latest financial hardening.
+- Private evidence remains in `mission365-private`; reviewer document access uses short-lived signed URLs.
 - Browser security headers include HSTS, clickjacking protection, MIME sniffing protection, referrer policy, permissions policy, and COOP.
-- Private account/workspace routes are excluded from robots indexing; sitemap includes public Mission 365 pages and published mission URLs.
-- Global route recovery warns users not to infer financial success/failure from a UI error.
-- `/api/health` reports live/degraded backend readiness rather than a static success response.
-- Notification records automatically queue in-app/email/SMS delivery according to user preference. Provider dispatcher is ready for Resend/Twilio credentials.
-- Risk scan covers duplicate organization identity, donation velocity/large gifts, and payout requirements due.
+- Checkout and registry checkout have server-side rate limits.
+- Risk controls cover duplicate organization identity, donation velocity/large gifts, payout requirements, disputes, and high-severity release holds.
+- In-app notifications work without third-party provider credentials. Resend/Twilio credentials remain optional gates for outbound email/SMS delivery.
 
-## QA evidence
+## Source control and release automation
 
-- Production dependency audit: passed at high severity threshold.
-- TypeScript validation: passed.
-- Next.js optimized production build: passed.
-- Launch accounting QA passed with disposable records removed:
-  - $100 succeeded → mission + sponsorship funded $100.
-  - $25 partial refund → mission + sponsorship net funded $75.
-  - full refund → mission + sponsorship net funded $0.
-- Current production database intentionally remains free of fake public activity: 0 published missions, 0 donations, 0 receipts, 0 sponsorships.
-- Current real launch cohort remains 2 organizations `under_review`; no organization is falsely marked verified.
-- Supabase security advisor currently reports INFO-only no-policy notices on intentionally server-only tables; no critical security lint is being ignored.
+- Production application code and critical Supabase Edge runtimes are source-controlled in this repository, including checkout, webhook, Connect, owner/donor/business dashboards, admin review, payout release, refund control, risk, notification dispatch, registry, entry, and profile-management functions.
+- The financial reconciliation hardening is preserved as Supabase migration `20260815111722_mission365_financial_reconciliation_hardening.sql`.
+- Disabled QA/probe Edge Functions may remain deployed as non-operational stubs, but they are not part of the live application path.
+- `main` runs dependency audit, lint, TypeScript validation, tests, optimized build, route verification, and production commit verification.
+- Vercel Git deployment is operational; the prior manual-deployment/Git-integration blocker is closed.
 
 ## Native/mobile state
 
-- Capacitor no longer assumes the obsolete Next static `out/` directory.
-- Native shell targets the live `https://mission-365.vercel.app` application with HTTPS-only navigation.
-- No fake TestFlight or Android download is published.
-- Store signing, Apple/Google distribution credentials, final native release verification, and push-notification provisioning remain account-owner release gates.
+- Native shell targets the live HTTPS production application.
+- Public download links remain disabled until signed distribution is real.
+- Remaining mobile gates are iOS signing/provisioning and TestFlight/App Store review; Android signing and Play Console release; push/deep-link verification on signed builds.
 
-## Release automation
+## Legal / policy gate
 
-- `main` runs a production-release workflow that performs install, production dependency audit, TypeScript, and optimized build.
-- The Vercel CLI deployment step is conditional and currently skips because repository secrets `VERCEL_TOKEN`, `VERCEL_ORG_ID`, and `VERCEL_PROJECT_ID` have not been installed.
-- The legacy Vercel Git integration is still not creating deployments from merges.
-- Until one of those deployment paths is repaired, production web promotion requires an authenticated Vercel deployment action.
+The policy hub is an operating draft. Broad public fundraising should still receive legal/tax review, especially around tax deductibility/receipt language, fundraising obligations, privacy, refunds, platform fees, and marketplace/payment obligations.
 
-## Real launch gates that must not be bypassed
+## Definition of web launch-ready
 
-1. Create a dedicated Mission 365 Stripe restricted live key in Stripe Dashboard and install it as the Supabase Edge secret `STRIPE_SECRET_KEY`. Do not use or expose a broad platform secret in application code.
-2. Complete a controlled real Checkout → webhook → ledger → receipt → refund test, then a monthly recurring test.
-3. Complete at least one real verified organization package; current Sole Exchange and Playmakers records have no uploaded evidence yet.
-4. Create/complete that verified organization's Stripe recipient onboarding and confirm transfers are active.
-5. Publish the first legitimate mission only after verification, payout readiness, milestones, reviewer approval, and no risk hold.
-6. Activate the authorized Mission 365 admin user by completing normal Supabase email authentication for the pre-authorized reviewer email.
-7. Add email/SMS provider credentials if outbound Resend/Twilio delivery is desired; in-app notifications work without them.
-8. Install GitHub Vercel release secrets or repair the Vercel Git integration for permanent automatic deployment.
-9. Complete Apple/Google signing and store distribution before mobile download links are exposed.
-10. Obtain legal/tax counsel review before broad public scale, especially tax-deductibility, fundraising, privacy, refund, fee, and marketplace/payment obligations.
+MISSION 365 web should only be treated as live-giving ready when all of the following are true at the same time:
 
-## Production identifiers
+- restricted Stripe API credential present;
+- Stripe webhook signing ready;
+- at least one legitimate organization verified;
+- that organization's recipient account transfer-ready;
+- at least one mission has a measurable milestone and is approved/published;
+- controlled real one-time and recurring payment tests pass through webhook, ledger, receipt, refund, and payout controls;
+- no open high/critical risk hold blocks the launch mission.
 
-- Supabase project: `rwpcqeiukrektpjqkpdx`
-- Vercel project: `prj_Tuq5y7kTRpAxgyvgfrT0jEQuqeOK`
-- Canonical web target: `https://mission-365.vercel.app`
-- GitHub repository: `dolodorsey/mission-365`
-- Launch-completion main commit: `0dceb067c9caa72202b8b6cd060200d2137436f2`
+Until then, the current verification-first prelaunch state is intentional and correct.
