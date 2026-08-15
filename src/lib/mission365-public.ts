@@ -9,6 +9,7 @@ export const MISSION365_DONOR_DASHBOARD_URL = `${MISSION365_SUPABASE_URL}/functi
 export const MISSION365_BUSINESS_DASHBOARD_URL = `${MISSION365_SUPABASE_URL}/functions/v1/mission365-business-dashboard`
 export const MISSION365_CONNECT_URL = `${MISSION365_SUPABASE_URL}/functions/v1/mission365-connect`
 export const MISSION365_PAYOUT_RELEASE_URL = `${MISSION365_SUPABASE_URL}/functions/v1/mission365-payout-release`
+export const MISSION365_REFUND_URL = `${MISSION365_SUPABASE_URL}/functions/v1/mission365-refund`
 export const MISSION365_NOTIFICATION_DISPATCH_URL = `${MISSION365_SUPABASE_URL}/functions/v1/mission365-notification-dispatch`
 export const MISSION365_RISK_SCAN_URL = `${MISSION365_SUPABASE_URL}/functions/v1/mission365-risk-scan`
 export const MISSION365_REGISTRY_URL = `${MISSION365_SUPABASE_URL}/functions/v1/mission365-registry`
