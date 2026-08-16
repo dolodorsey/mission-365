@@ -1,199 +1,27 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.112.0'
-
-const encoder = new TextEncoder()
-
-function adminClient() {
-  const url = Deno.env.get('SUPABASE_URL')!
-  const modern = Deno.env.get('SUPABASE_SECRET_KEYS')
-  const key = modern ? JSON.parse(modern).default : Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } })
-}
-
-async function hmacHex(secret: string, payload: string) {
-  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
-  const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(payload))
-  return Array.from(new Uint8Array(signature)).map((b) => b.toString(16).padStart(2, '0')).join('')
-}
-
-function constantTimeEqual(a: string, b: string) {
-  if (a.length !== b.length) return false
-  let result = 0
-  for (let i = 0; i < a.length; i++) result |= a.charCodeAt(i) ^ b.charCodeAt(i)
-  return result === 0
-}
-
-async function verifyStripeSignature(raw: string, header: string, secret: string) {
-  const pieces = header.split(',').map((part) => part.split('='))
-  const timestamp = pieces.find(([key]) => key === 't')?.[1]
-  const signatures = pieces.filter(([key]) => key === 'v1').map(([, value]) => value)
-  if (!timestamp || signatures.length === 0) return false
-  if (Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) return false
-  const expected = await hmacHex(secret, `${timestamp}.${raw}`)
-  return signatures.some((signature) => constantTimeEqual(expected, signature))
-}
-
-function subscriptionMetadata(invoice: any) {
-  return invoice?.parent?.subscription_details?.metadata || invoice?.subscription_details?.metadata || invoice?.metadata || {}
-}
-
-function paymentIntentFromInvoice(invoice: any) {
-  if (typeof invoice?.payment_intent === 'string') return invoice.payment_intent
-  for (const row of invoice?.payments?.data || []) {
-    const payment = row?.payment
-    if (typeof payment?.payment_intent === 'string') return payment.payment_intent
-  }
-  return null
-}
-
-async function issueReceipt(supabase: any, donation: any) {
-  if (!donation?.id || !donation?.donor_user_id) return
-  await supabase.from('mission365_receipts').upsert({
-    donation_id: donation.id,
-    donor_user_id: donation.donor_user_id,
-    receipt_number: `M365-${String(donation.id).replaceAll('-', '').slice(0, 16).toUpperCase()}`,
-    amount_cents: donation.amount_cents,
-    currency: donation.currency || 'usd',
-  }, { onConflict: 'donation_id', ignoreDuplicates: true })
-}
-
-async function completeOneTimeSession(supabase: any, session: any) {
-  const metadata = session.metadata || {}
-  if (!metadata.donation_id) return
-  const { data: donation } = await supabase.from('mission365_donations').update({
-    status: 'succeeded',
-    stripe_payment_intent_id: session.payment_intent,
-    succeeded_at: new Date().toISOString(),
-  }).eq('id', metadata.donation_id).select('*').single()
-  if (metadata.giving_plan_id) await supabase.from('mission365_giving_plans').update({ status: 'completed' }).eq('id', metadata.giving_plan_id)
-  await issueReceipt(supabase, donation)
-}
-
-Deno.serve(async (req: Request) => {
-  if (req.method !== 'POST') return Response.json({ error: 'Method not allowed' }, { status: 405 })
-
-  const supabase = adminClient()
-  const raw = await req.text()
-  const signature = req.headers.get('stripe-signature') || ''
-  const { data: secret, error: secretError } = await supabase.rpc('mission365_get_runtime_secret', { secret_name: 'stripe_webhook_secret' })
-  if (secretError || !secret) return Response.json({ error: 'Webhook secret unavailable' }, { status: 503 })
-  if (!(await verifyStripeSignature(raw, signature, secret))) return Response.json({ error: 'Invalid signature' }, { status: 400 })
-
-  let event: any
-  try { event = JSON.parse(raw) } catch { return Response.json({ error: 'Invalid payload' }, { status: 400 }) }
-
-  const { error: claimError } = await supabase.from('mission365_stripe_events').insert({
-    stripe_event_id: event.id,
-    event_type: event.type,
-    livemode: Boolean(event.livemode),
-    payload: event,
-    processing_status: 'received',
-  })
-  if (claimError) {
-    if (claimError.code === '23505') return Response.json({ received: true, duplicate: true })
-    return Response.json({ error: 'Could not claim event' }, { status: 500 })
-  }
-
-  try {
-    const object = event.data?.object || {}
-
-    if (event.type === 'checkout.session.completed') {
-      const metadata = object.metadata || {}
-      if (metadata.giving_plan_id) {
-        const update: Record<string, unknown> = { stripe_checkout_session_id: object.id }
-        if (object.mode === 'subscription' && object.subscription) {
-          update.status = 'active'
-          update.stripe_subscription_id = object.subscription
-        }
-        await supabase.from('mission365_giving_plans').update(update).eq('id', metadata.giving_plan_id)
-      }
-      if (object.mode === 'payment' && object.payment_status === 'paid') await completeOneTimeSession(supabase, object)
-    }
-
-    if (event.type === 'checkout.session.async_payment_succeeded') {
-      if (object.mode === 'payment') await completeOneTimeSession(supabase, object)
-    }
-
-    if (event.type === 'checkout.session.async_payment_failed') {
-      const metadata = object.metadata || {}
-      if (metadata.donation_id) await supabase.from('mission365_donations').update({ status: 'failed' }).eq('id', metadata.donation_id)
-      if (metadata.giving_plan_id) await supabase.from('mission365_giving_plans').update({ status: 'payment_failed' }).eq('id', metadata.giving_plan_id)
-    }
-
-    if (event.type === 'invoice.paid') {
-      const metadata = subscriptionMetadata(object)
-      const subscriptionId = object.subscription || object?.parent?.subscription_details?.subscription
-      if (metadata.giving_plan_id && metadata.mission_id && metadata.donor_user_id) {
-        await supabase.from('mission365_giving_plans').update({ status: 'active', ...(subscriptionId ? { stripe_subscription_id: subscriptionId } : {}) }).eq('id', metadata.giving_plan_id)
-        const paymentIntentId = paymentIntentFromInvoice(object)
-        const amount = Number(object.amount_paid || 0)
-        if (paymentIntentId && amount > 0) {
-          const { data: existing } = await supabase.from('mission365_donations').select('id').eq('stripe_payment_intent_id', paymentIntentId).maybeSingle()
-          if (!existing) {
-            const donationId = crypto.randomUUID()
-            const { data: donation } = await supabase.from('mission365_donations').insert({
-              id: donationId,
-              giving_plan_id: metadata.giving_plan_id,
-              donor_user_id: metadata.donor_user_id,
-              mission_id: metadata.mission_id,
-              amount_cents: amount,
-              platform_fee_cents: Math.floor(amount * 500 / 10000),
-              currency: String(object.currency || 'usd').toLowerCase(),
-              status: 'succeeded',
-              stripe_payment_intent_id: paymentIntentId,
-              idempotency_key: crypto.randomUUID(),
-              succeeded_at: new Date().toISOString(),
-            }).select('*').single()
-            await issueReceipt(supabase, donation)
-          }
-        }
-      }
-    }
-
-    if (event.type === 'invoice.payment_failed') {
-      const metadata = subscriptionMetadata(object)
-      if (metadata.giving_plan_id) await supabase.from('mission365_giving_plans').update({ status: 'payment_failed' }).eq('id', metadata.giving_plan_id)
-    }
-
-    if (event.type === 'customer.subscription.deleted') {
-      const metadata = object.metadata || {}
-      if (metadata.giving_plan_id) await supabase.from('mission365_giving_plans').update({ status: 'cancelled' }).eq('id', metadata.giving_plan_id)
-    }
-
-    if (event.type === 'payment_intent.payment_failed') {
-      const donationId = object.metadata?.donation_id
-      if (donationId) await supabase.from('mission365_donations').update({ status: 'failed', stripe_payment_intent_id: object.id }).eq('id', donationId)
-    }
-
-    if (event.type === 'charge.refunded') {
-      const paymentIntentId = typeof object.payment_intent === 'string' ? object.payment_intent : null
-      if (paymentIntentId) {
-        const status = Number(object.amount_refunded) >= Number(object.amount) ? 'refunded' : 'partially_refunded'
-        await supabase.from('mission365_donations').update({ status }).eq('stripe_payment_intent_id', paymentIntentId)
-      }
-    }
-
-    if (event.type === 'charge.dispute.created') {
-      const paymentIntentId = typeof object.payment_intent === 'string' ? object.payment_intent : null
-      if (paymentIntentId) {
-        const { data: donation } = await supabase.from('mission365_donations').select('id,mission_id,donor_user_id').eq('stripe_payment_intent_id', paymentIntentId).maybeSingle()
-        if (donation) {
-          await supabase.from('mission365_donations').update({ status: 'disputed' }).eq('id', donation.id)
-          await supabase.from('mission365_risk_events').insert({
-            donation_id: donation.id,
-            mission_id: donation.mission_id,
-            user_id: donation.donor_user_id,
-            risk_type: 'stripe_dispute',
-            severity: 'high',
-            details: { stripe_dispute_id: object.dispute || object.id, reason: object.reason },
-          })
-        }
-      }
-    }
-
-    await supabase.from('mission365_stripe_events').update({ processing_status: 'processed', processed_at: new Date().toISOString() }).eq('stripe_event_id', event.id)
-    return Response.json({ received: true })
-  } catch (error) {
-    await supabase.from('mission365_stripe_events').update({ processing_status: 'failed', error_message: error instanceof Error ? error.message : 'Unknown processing error' }).eq('stripe_event_id', event.id)
-    return Response.json({ error: 'Webhook processing failed' }, { status: 500 })
-  }
-})
+const encoder=new TextEncoder()
+function adminClient(){const url=Deno.env.get('SUPABASE_URL')!;const modern=Deno.env.get('SUPABASE_SECRET_KEYS');const key=modern?JSON.parse(modern).default:Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;return createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}})}
+async function hmacHex(secret:string,payload:string){const key=await crypto.subtle.importKey('raw',encoder.encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);const signature=await crypto.subtle.sign('HMAC',key,encoder.encode(payload));return Array.from(new Uint8Array(signature)).map(b=>b.toString(16).padStart(2,'0')).join('')}
+function constantTimeEqual(a:string,b:string){if(a.length!==b.length)return false;let result=0;for(let i=0;i<a.length;i++)result|=a.charCodeAt(i)^b.charCodeAt(i);return result===0}
+async function verifyStripeSignature(raw:string,header:string,secret:string){const pieces=header.split(',').map(part=>part.split('='));const timestamp=pieces.find(([key])=>key==='t')?.[1];const signatures=pieces.filter(([key])=>key==='v1').map(([,value])=>value);if(!timestamp||!signatures.length)return false;if(Math.abs(Date.now()/1000-Number(timestamp))>300)return false;const expected=await hmacHex(secret,`${timestamp}.${raw}`);return signatures.some(signature=>constantTimeEqual(expected,signature))}
+function subscriptionMetadata(invoice:any){return invoice?.parent?.subscription_details?.metadata||invoice?.subscription_details?.metadata||invoice?.metadata||{}}
+function paymentIntentFromInvoice(invoice:any){if(typeof invoice?.payment_intent==='string')return invoice.payment_intent;for(const row of invoice?.payments?.data||[]){const payment=row?.payment;if(typeof payment?.payment_intent==='string')return payment.payment_intent}return null}
+async function notify(db:any,userId:string|undefined,type:string,title:string,body:string,data:any={}){if(!userId)return;const {data:row}=await db.from('mission365_notifications').insert({user_id:userId,notification_type:type,title,body,data}).select('id').single();if(!row)return;const {data:prefs}=await db.from('mission365_notification_preferences').select('in_app_enabled,email_enabled,sms_enabled').eq('user_id',userId).maybeSingle();const channels:any[]=[];if(prefs?.in_app_enabled!==false)channels.push({notification_id:row.id,channel:'in_app',status:'sent',attempted_at:new Date().toISOString()});if(prefs?.email_enabled!==false)channels.push({notification_id:row.id,channel:'email',status:'queued'});if(prefs?.sms_enabled===true)channels.push({notification_id:row.id,channel:'sms',status:'queued'});if(channels.length)await db.from('mission365_notification_deliveries').insert(channels)}
+async function issueReceipt(db:any,donation:any){if(!donation?.id||!donation?.donor_user_id)return;await db.from('mission365_receipts').upsert({donation_id:donation.id,donor_user_id:donation.donor_user_id,receipt_number:`M365-${String(donation.id).replaceAll('-','').slice(0,16).toUpperCase()}`,amount_cents:donation.amount_cents,currency:donation.currency||'usd'},{onConflict:'donation_id',ignoreDuplicates:true})}
+async function donationByPaymentIntent(db:any,paymentIntentId:string){const {data}=await db.from('mission365_donations').select('*').eq('stripe_payment_intent_id',paymentIntentId).maybeSingle();return data}
+async function completeOneTimeSession(db:any,session:any){const md=session.metadata||{};if(!md.donation_id)return;const {data:donation}=await db.from('mission365_donations').update({status:'succeeded',stripe_payment_intent_id:session.payment_intent,succeeded_at:new Date().toISOString(),refunded_amount_cents:0}).eq('id',md.donation_id).select('*').single();if(md.giving_plan_id)await db.from('mission365_giving_plans').update({status:'completed',stripe_customer_id:typeof session.customer==='string'?session.customer:null}).eq('id',md.giving_plan_id);await issueReceipt(db,donation);await notify(db,donation?.donor_user_id,'donation_succeeded','Gift received','Your Mission 365 gift was successfully recorded.',{donation_id:donation?.id,mission_id:donation?.mission_id})}
+async function handleEvent(db:any,event:any){const object=event.data?.object||{};const type=String(event.type||'')
+if(type==='checkout.session.completed'){const md=object.metadata||{};if(md.giving_plan_id){const update:any={stripe_checkout_session_id:object.id};if(typeof object.customer==='string')update.stripe_customer_id=object.customer;if(object.mode==='subscription'&&object.subscription){update.status='active';update.stripe_subscription_id=object.subscription}await db.from('mission365_giving_plans').update(update).eq('id',md.giving_plan_id)}if(object.mode==='payment'&&object.payment_status==='paid')await completeOneTimeSession(db,object);return}
+if(type==='checkout.session.async_payment_succeeded'){if(object.mode==='payment')await completeOneTimeSession(db,object);return}
+if(type==='checkout.session.async_payment_failed'){const md=object.metadata||{};if(md.donation_id)await db.from('mission365_donations').update({status:'failed'}).eq('id',md.donation_id);if(md.giving_plan_id)await db.from('mission365_giving_plans').update({status:'payment_failed'}).eq('id',md.giving_plan_id);await notify(db,md.donor_user_id,'donation_failed','Gift payment failed','Stripe reported that this Mission 365 payment failed.',{mission_id:md.mission_id,giving_plan_id:md.giving_plan_id});return}
+if(type==='checkout.session.expired'){const md=object.metadata||{};if(md.donation_id)await db.from('mission365_donations').update({status:'failed'}).eq('id',md.donation_id).eq('status','pending');if(md.giving_plan_id)await db.from('mission365_giving_plans').update({status:'cancelled'}).eq('id',md.giving_plan_id).eq('status','pending');return}
+if(type==='invoice.paid'){const md=subscriptionMetadata(object);const subscriptionId=object.subscription||object?.parent?.subscription_details?.subscription;if(md.giving_plan_id&&md.mission_id&&md.donor_user_id){const planUpdate:any={status:'active',donor_type:md.donor_type==='business'?'business':'personal',business_organization_id:md.business_organization_id||null};if(subscriptionId)planUpdate.stripe_subscription_id=subscriptionId;if(typeof object.customer==='string')planUpdate.stripe_customer_id=object.customer;await db.from('mission365_giving_plans').update(planUpdate).eq('id',md.giving_plan_id);const paymentIntentId=paymentIntentFromInvoice(object);const amount=Number(object.amount_paid||0);if(paymentIntentId&&amount>0){const existing=await donationByPaymentIntent(db,paymentIntentId);if(!existing){const {data:pending}=await db.from('mission365_donations').select('*').eq('giving_plan_id',md.giving_plan_id).eq('status','pending').order('created_at',{ascending:true}).limit(1).maybeSingle();let donation:any=null;if(pending){const {data:updated}=await db.from('mission365_donations').update({amount_cents:amount,platform_fee_cents:Math.floor(amount*500/10000),refunded_amount_cents:0,currency:String(object.currency||'usd').toLowerCase(),status:'succeeded',stripe_payment_intent_id:paymentIntentId,stripe_invoice_id:object.id,succeeded_at:new Date().toISOString(),donor_type:md.donor_type==='business'?'business':'personal',business_organization_id:md.business_organization_id||null}).eq('id',pending.id).select('*').single();donation=updated}else{const {data:inserted}=await db.from('mission365_donations').insert({id:crypto.randomUUID(),giving_plan_id:md.giving_plan_id,donor_user_id:md.donor_user_id,mission_id:md.mission_id,business_organization_id:md.business_organization_id||null,donor_type:md.donor_type==='business'?'business':'personal',amount_cents:amount,platform_fee_cents:Math.floor(amount*500/10000),refunded_amount_cents:0,currency:String(object.currency||'usd').toLowerCase(),status:'succeeded',stripe_payment_intent_id:paymentIntentId,stripe_invoice_id:object.id,idempotency_key:crypto.randomUUID(),succeeded_at:new Date().toISOString()}).select('*').single();donation=inserted}await issueReceipt(db,donation);await notify(db,md.donor_user_id,'recurring_gift_succeeded','Monthly gift received','Your recurring Mission 365 gift was successfully recorded.',{donation_id:donation?.id,mission_id:md.mission_id,donor_type:md.donor_type||'personal'})}}}return}
+if(type==='invoice.payment_failed'||type==='invoice.payment_action_required'){const md=subscriptionMetadata(object);if(md.giving_plan_id)await db.from('mission365_giving_plans').update({status:'payment_failed'}).eq('id',md.giving_plan_id);await notify(db,md.donor_user_id,'recurring_gift_failed','Recurring gift needs attention','Your Mission 365 recurring gift could not be collected. Update your payment method in the donor portal.',{giving_plan_id:md.giving_plan_id,mission_id:md.mission_id});return}
+if(type==='customer.subscription.updated'||type==='customer.subscription.deleted'){const md=object.metadata||{};if(md.giving_plan_id){let status='active';const stripeStatus=String(object.status||'');if(type==='customer.subscription.deleted'||stripeStatus==='canceled')status='cancelled';else if(['past_due','unpaid','incomplete','incomplete_expired'].includes(stripeStatus))status='payment_failed';else if(stripeStatus==='paused')status='paused';await db.from('mission365_giving_plans').update({status,stripe_subscription_id:object.id}).eq('id',md.giving_plan_id);if(status==='cancelled')await notify(db,md.donor_user_id,'giving_plan_cancelled','Recurring giving cancelled','Your Mission 365 recurring giving plan has been cancelled.',{giving_plan_id:md.giving_plan_id})}return}
+if(type==='payment_intent.payment_failed'){const donationId=object.metadata?.donation_id;if(donationId)await db.from('mission365_donations').update({status:'failed',stripe_payment_intent_id:object.id}).eq('id',donationId);await notify(db,object.metadata?.donor_user_id,'donation_failed','Gift payment failed','Stripe could not complete this Mission 365 payment.',{donation_id:donationId,mission_id:object.metadata?.mission_id});return}
+if(type==='charge.refunded'){const pi=typeof object.payment_intent==='string'?object.payment_intent:null;if(pi){const donation=await donationByPaymentIntent(db,pi);if(donation){const refunded=Math.min(Number(object.amount_refunded||0),Number(donation.amount_cents||0));const status=refunded>=Number(donation.amount_cents)?'refunded':'partially_refunded';const net=Math.max(0,Number(donation.amount_cents)-refunded);await db.from('mission365_donations').update({status,refunded_amount_cents:refunded,platform_fee_cents:Math.floor(net*500/10000)}).eq('id',donation.id);await notify(db,donation.donor_user_id,'refund_processed',status==='refunded'?'Gift refunded':'Partial refund processed','A refund was recorded for your Mission 365 gift.',{donation_id:donation.id,mission_id:donation.mission_id,refunded_amount_cents:refunded})}}return}
+if(type==='charge.dispute.created'){const pi=typeof object.payment_intent==='string'?object.payment_intent:null;if(pi){const donation=await donationByPaymentIntent(db,pi);if(donation){await db.from('mission365_donations').update({status:'disputed',dispute_status:String(object.status||'open')}).eq('id',donation.id);await db.from('mission365_risk_events').insert({donation_id:donation.id,mission_id:donation.mission_id,user_id:donation.donor_user_id,risk_type:'stripe_dispute',severity:'high',details:{stripe_dispute_id:object.id,reason:object.reason,status:object.status}})}}return}
+if(type==='charge.dispute.closed'){const pi=typeof object.payment_intent==='string'?object.payment_intent:null;if(pi){const donation=await donationByPaymentIntent(db,pi);if(donation){const outcome=String(object.status||'');if(outcome==='won'){const next=Number(donation.refunded_amount_cents||0)>0?'partially_refunded':'succeeded';await db.from('mission365_donations').update({status:next,dispute_status:'won'}).eq('id',donation.id)}else await db.from('mission365_donations').update({status:'disputed',dispute_status:outcome||'lost'}).eq('id',donation.id);await db.from('mission365_risk_events').update({status:'resolved',resolved_at:new Date().toISOString(),details:{stripe_dispute_id:object.id,reason:object.reason,status:outcome}}).eq('donation_id',donation.id).eq('risk_type','stripe_dispute').eq('status','open')}}return}
+if(type==='transfer.failed'||type==='transfer.reversed'){const transferId=object.id;const {data:payout}=await db.from('mission365_payouts').select('*').eq('stripe_transfer_id',transferId).maybeSingle();if(payout){const next=type==='transfer.reversed'?'reversed':'failed';await db.from('mission365_payouts').update({status:next,failure_reason:type==='transfer.failed'?String(object.failure_message||'Stripe transfer failed'):null,reversed_at:type==='transfer.reversed'?new Date().toISOString():null,updated_at:new Date().toISOString()}).eq('id',payout.id);await db.from('mission365_risk_events').insert({organization_id:payout.organization_id,mission_id:payout.mission_id,risk_type:type==='transfer.reversed'?'transfer_reversed':'transfer_failed',severity:'high',details:{stripe_transfer_id:transferId,payout_id:payout.id}});const {data:members}=await db.from('mission365_organization_members').select('user_id').eq('organization_id',payout.organization_id);for(const m of members||[])await notify(db,m.user_id,'payout_issue',type==='transfer.reversed'?'Payout reversed':'Payout failed','A Mission 365 payout requires attention.',{payout_id:payout.id,mission_id:payout.mission_id})}return}
+if(type==='v2.core.account[requirements].updated'||type==='v2.core.account[configuration.recipient].updated'){const accountId=object.id;if(accountId){const status=String(object?.configuration?.recipient?.capabilities?.stripe_balance?.stripe_transfers?.status||'inactive');const due=object?.requirements?.entries||object?.requirements||[];await db.from('mission365_payout_accounts').update({transfers_status:status==='active'?'active':'restricted',onboarding_status:status==='active'?'ready':(Array.isArray(due)&&due.length?'requirements_due':'pending'),requirements_due:due,last_checked_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('stripe_account_id',accountId)}return}}
+Deno.serve(async(req:Request)=>{if(req.method!=='POST')return Response.json({error:'Method not allowed'},{status:405});const db=adminClient();const raw=await req.text();const signature=req.headers.get('stripe-signature')||'';const {data:secret,error:secretError}=await db.rpc('mission365_get_runtime_secret',{secret_name:'stripe_webhook_secret'});if(secretError||!secret)return Response.json({error:'Webhook secret unavailable'},{status:503});if(!(await verifyStripeSignature(raw,signature,secret)))return Response.json({error:'Invalid signature'},{status:400});let event:any;try{event=JSON.parse(raw)}catch{return Response.json({error:'Invalid payload'},{status:400})}const {error:claimError}=await db.from('mission365_stripe_events').insert({stripe_event_id:event.id,event_type:event.type,livemode:Boolean(event.livemode),payload:event,processing_status:'received'});if(claimError){if(claimError.code==='23505')return Response.json({received:true,duplicate:true});return Response.json({error:'Could not claim event'},{status:500})}try{await handleEvent(db,event);await db.from('mission365_stripe_events').update({processing_status:'processed',processed_at:new Date().toISOString()}).eq('stripe_event_id',event.id);return Response.json({received:true})}catch(error){await db.from('mission365_stripe_events').update({processing_status:'failed',error_message:error instanceof Error?error.message:'Unknown processing error'}).eq('stripe_event_id',event.id);console.error('mission365 webhook failed',error);return Response.json({error:'Webhook processing failed'},{status:500})}})
