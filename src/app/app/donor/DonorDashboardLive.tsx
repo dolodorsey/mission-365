@@ -35,31 +35,31 @@ export default function DonorDashboardLive(){
 
   useEffect(()=>{void load()},[load])
 
-  if(!signedIn&&!busy)return <MissionAppShell title="Donor Dashboard" subtitle="Your giving, missions, receipts, and impact in one place."><article className="role-card"><h3>Sign in to see your giving ledger.</h3><p>Only your own donation history, recurring plans, and receipts are returned.</p><Link className="button" href="/login">Sign in</Link></article></MissionAppShell>
+  if(!signedIn&&!busy)return <MissionAppShell title="Donor Dashboard" subtitle="Your giving, missions, receipts, and impact in one place."><article className="role-card"><h3>Sign in to see your giving ledger.</h3><p>Only your own donation history, monthly subscriptions, and receipts are returned.</p><Link className="button" href="/login">Sign in</Link></article></MissionAppShell>
 
-  return <MissionAppShell title="Donor Dashboard" subtitle="Live giving totals, recurring plans, supported missions, and receipts from your Mission 365 ledger.">
+  return <MissionAppShell title="Donor Dashboard" subtitle="Live giving totals, monthly subscriptions, supported missions, and receipts from your Mission 365 ledger.">
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap'}}><p className="eyebrow">LIVE DONOR LEDGER</p><button className="button button-ghost" onClick={()=>void load()} disabled={busy}><RefreshCw size={16}/>{busy?'Refreshing…':'Refresh'}</button></div>
     {message&&<article className="role-card"><strong>{message}</strong></article>}
     <MetricGrid items={[
-      ['Giving this year',data?money(data.metrics.givingThisYearCents):'—','Succeeded donations recorded this calendar year.'],
-      ['Active monthly plans',data?String(data.metrics.activePlans):'—','Recurring giving plans currently active.'],
-      ['Missions supported',data?String(data.metrics.missionsSupported):'—','Unique missions with succeeded giving.'],
-      ['Receipts',data?String(data.metrics.receiptCount):'—','Receipts issued from recorded donations.'],
+      ['Giving this year',data?money(data.metrics.givingThisYearCents):'—','Succeeded subscription payments recorded this calendar year.'],
+      ['Active monthly subscriptions',data?String(data.metrics.activePlans):'—','Recurring Mission 365 subscriptions currently active.'],
+      ['Missions supported',data?String(data.metrics.missionsSupported):'—','Unique missions with succeeded subscription payments.'],
+      ['Receipts',data?String(data.metrics.receiptCount):'—','Receipts issued from recorded monthly payments.'],
     ]}/>
 
     <section className="workspace-panel">
-      <div><p className="eyebrow">RECENT GIVING</p><h2>Your transaction history.</h2></div>
-      {!data?.donations.length?<article className="role-card"><h3>No recorded donations yet.</h3><p>Only completed Mission 365 giving appears here.</p><Link className="button" href="/missions">Explore verified missions</Link></article>:
+      <div><p className="eyebrow">RECENT GIVING</p><h2>Your payment history.</h2></div>
+      {!data?.donations.length?<article className="role-card"><h3>No recorded subscription payments yet.</h3><p>Only completed Mission 365 monthly payments appear here.</p><Link className="button" href="/missions">Explore verified missions</Link></article>:
         <div className="record-list">{data.donations.slice(0,12).map(row=><div className="record-row" key={row.id}><div><strong>{row.mission?.title||'Mission'}</strong><small>{new Date(row.succeeded_at||row.created_at).toLocaleDateString()} · {label(row.status)}</small></div><span>{money(row.amount_cents,row.currency)}</span></div>)}</div>}
     </section>
 
     <section className="workspace-panel">
-      <div><p className="eyebrow">GIVING PLANS</p><h2>Recurring and one-time commitments.</h2></div>
-      {!data?.plans.length?<p>No giving plans have been created yet.</p>:<div className="record-list">{data.plans.map(plan=><div className="record-row" key={plan.id}><div><strong>{plan.mission?.title||'Mission 365 giving plan'}</strong><small>{label(plan.cadence)} · {label(plan.status)}</small></div><span>{money(plan.amount_cents)}</span></div>)}</div>}
+      <div><p className="eyebrow">MONTHLY SUBSCRIPTIONS</p><h2>Your recurring Mission 365 support.</h2></div>
+      {!data?.plans.length?<p>No monthly subscriptions have been created yet.</p>:<div className="record-list">{data.plans.map(plan=><div className="record-row" key={plan.id}><div><strong>{plan.mission?.title||'Mission 365 subscription'}</strong><small>{label(plan.cadence)} · {label(plan.status)}</small></div><span>{money(plan.amount_cents)}/mo</span></div>)}</div>}
     </section>
 
     <section className="workspace-panel">
-      <div><p className="eyebrow">RECEIPTS</p><h2>Issued transaction records.</h2></div>
+      <div><p className="eyebrow">RECEIPTS</p><h2>Issued monthly payment records.</h2></div>
       {!data?.receipts.length?<p>No receipts have been issued yet.</p>:<div className="record-list">{data.receipts.map(receipt=><div className="record-row" key={receipt.id}><div><strong><ReceiptText size={16}/> {receipt.receipt_number}</strong><small>{new Date(receipt.issued_at).toLocaleDateString()}</small></div><span>{money(receipt.amount_cents,receipt.currency)}</span></div>)}</div>}
     </section>
   </MissionAppShell>
