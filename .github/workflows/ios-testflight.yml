@@ -1,0 +1,188 @@
+name: Mission 365 iOS TestFlight
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'ios/**'
+      - 'native-shell/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'capacitor.config.*'
+      - 'next.config.*'
+      - 'Gemfile'
+      - '.github/workflows/ios-testflight.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: mission365-ios-testflight
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  verify-build-upload:
+    runs-on: macos-latest
+    timeout-minutes: 50
+    env:
+      TESTFLIGHT_CHANGELOG: Automated Mission 365 build from ${{ github.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare Apple release signing from secured Mission 365 broker
+        shell: bash
+        env:
+          APPLE_CREDENTIAL_BROKER_URL: https://dzlmtvodpyhetvektfuo.supabase.co/functions/v1/github-mission365-apple-release-credentials
+        run: |
+          set -euo pipefail
+          [[ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]] || { echo 'GitHub OIDC request URL unavailable'; exit 1; }
+          [[ -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]] || { echo 'GitHub OIDC request token unavailable'; exit 1; }
+
+          TOKEN_FILE="$RUNNER_TEMP/github-oidc.json"
+          CRED_FILE="$RUNNER_TEMP/mission365-apple-release-credentials.json"
+          KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
+          PRIVATE_KEY_P12="$RUNNER_TEMP/mission365-distribution-key.p12"
+          CERT_PATH="$RUNNER_TEMP/mission365-distribution.cer"
+          CERT_PASSWORD_PATH="$RUNNER_TEMP/mission365-distribution-password"
+          PROFILE_PATH="$RUNNER_TEMP/mission365-app-store.mobileprovision"
+          META_FILE="$RUNNER_TEMP/mission365-apple-release-meta.json"
+
+          curl --fail --silent --show-error --retry 3 --retry-delay 2 --retry-all-errors \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=mission365-apple-release" \
+            -o "$TOKEN_FILE"
+
+          OIDC_TOKEN=$(python3 - "$TOKEN_FILE" <<'PY'
+          import json,sys
+          with open(sys.argv[1], 'r', encoding='utf-8') as f:
+              print(json.load(f)['value'])
+          PY
+          )
+          [[ -n "$OIDC_TOKEN" ]] || { echo 'GitHub OIDC token was empty'; exit 1; }
+
+          curl --fail --silent --show-error --retry 3 --retry-delay 2 --retry-all-errors \
+            -X POST \
+            -H "Authorization: Bearer ${OIDC_TOKEN}" \
+            -H 'Content-Type: application/json' \
+            "$APPLE_CREDENTIAL_BROKER_URL" \
+            -o "$CRED_FILE"
+
+          python3 - "$CRED_FILE" "$KEY_PATH" "$PRIVATE_KEY_P12" "$CERT_PATH" "$CERT_PASSWORD_PATH" "$PROFILE_PATH" "$META_FILE" <<'PY'
+          import base64,json,os,sys
+          source,key_path,p12_path,cert_path,password_path,profile_path,meta_path=sys.argv[1:]
+          with open(source,'r',encoding='utf-8') as f:
+              data=json.load(f)
+          required=['key_id','issuer_id','team_id','key_content_base64','distribution_private_key_p12_base64','distribution_private_key_p12_password','distribution_certificate_content_base64','provisioning_profile_content_base64','provisioning_profile_name','provisioning_profile_uuid','bundle_identifier']
+          if any(not str(data.get(k,'')).strip() for k in required):
+              raise SystemExit('Mission 365 Apple release credential response is incomplete')
+          if data['bundle_identifier'] != 'com.mission365.app':
+              raise SystemExit('Mission 365 Apple broker returned the wrong bundle identifier')
+          with open(key_path,'wb') as f:
+              f.write(base64.b64decode(data['key_content_base64']))
+          with open(p12_path,'wb') as f:
+              f.write(base64.b64decode(data['distribution_private_key_p12_base64']))
+          with open(cert_path,'wb') as f:
+              f.write(base64.b64decode(data['distribution_certificate_content_base64']))
+          with open(profile_path,'wb') as f:
+              f.write(base64.b64decode(data['provisioning_profile_content_base64']))
+          with open(password_path,'w',encoding='utf-8') as f:
+              f.write(str(data['distribution_private_key_p12_password']))
+          with open(meta_path,'w',encoding='utf-8') as f:
+              json.dump({'key_id':data['key_id'],'issuer_id':data['issuer_id'],'team_id':data['team_id'],'profile_name':data['provisioning_profile_name'],'profile_uuid':data['provisioning_profile_uuid']},f)
+          for path in (key_path,p12_path,cert_path,password_path,profile_path):
+              os.chmod(path,0o600)
+          PY
+
+          KEY_ID=$(python3 -c "import json; print(json.load(open('$META_FILE'))['key_id'])")
+          ISSUER_ID=$(python3 -c "import json; print(json.load(open('$META_FILE'))['issuer_id'])")
+          TEAM_ID=$(python3 -c "import json; print(json.load(open('$META_FILE'))['team_id'])")
+          PROFILE_NAME=$(python3 -c "import json; print(json.load(open('$META_FILE'))['profile_name'])")
+          PROFILE_UUID=$(python3 -c "import json; print(json.load(open('$META_FILE'))['profile_uuid'])")
+          [[ -s "$KEY_PATH" && -s "$PRIVATE_KEY_P12" && -s "$CERT_PATH" && -s "$PROFILE_PATH" && -n "$KEY_ID" && -n "$ISSUER_ID" && -n "$TEAM_ID" && -n "$PROFILE_NAME" && -n "$PROFILE_UUID" ]] || { echo 'Mission 365 Apple signing files are incomplete'; exit 1; }
+
+          KEYCHAIN_PASSWORD=$(uuidgen)
+          KEYCHAIN_PATH="$RUNNER_TEMP/mission365-build.keychain-db"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+          security default-keychain -s "$KEYCHAIN_PATH"
+          CERT_PASSWORD=$(cat "$CERT_PASSWORD_PATH")
+          security import "$PRIVATE_KEY_P12" -P "$CERT_PASSWORD" -A -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/${PROFILE_UUID}.mobileprovision"
+
+          echo 'Mission 365 signing identity:'
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+          echo "Installed App Store provisioning profile: ${PROFILE_NAME}"
+
+          {
+            echo "ASC_KEY_ID=$KEY_ID"
+            echo "ASC_ISSUER_ID=$ISSUER_ID"
+            echo "APPLE_TEAM_ID=$TEAM_ID"
+            echo "ASC_KEY_PATH=$KEY_PATH"
+            echo "IOS_PROFILE_NAME=$PROFILE_NAME"
+            echo "IOS_PROFILE_UUID=$PROFILE_UUID"
+          } >> "$GITHUB_ENV"
+
+          rm -f "$TOKEN_FILE" "$CRED_FILE" "$PRIVATE_KEY_P12" "$CERT_PATH" "$CERT_PASSWORD_PATH" "$PROFILE_PATH" "$META_FILE"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Full Mission 365 product quality gate
+        run: |
+          npm audit --omit=dev --audit-level=high
+          npm run lint
+          npx tsc --noEmit
+          npm run test
+          npm run build
+          npm run verify:routes
+
+      - name: Regenerate and harden iOS project
+        shell: bash
+        run: bash scripts/prepare-ios-release.sh
+
+      - name: Validate Mission 365 iOS release settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "$ASC_KEY_ID" && -n "$ASC_ISSUER_ID" && -n "$APPLE_TEAM_ID" && -n "$IOS_PROFILE_NAME" && -n "$IOS_PROFILE_UUID" ]] || { echo 'Apple release identity is incomplete'; exit 1; }
+          [[ -s "$ASC_KEY_PATH" ]] || { echo 'App Store Connect key file is missing'; exit 1; }
+          [[ -s "$HOME/Library/MobileDevice/Provisioning Profiles/${IOS_PROFILE_UUID}.mobileprovision" ]] || { echo 'App Store provisioning profile is missing'; exit 1; }
+          grep -q 'PRODUCT_BUNDLE_IDENTIFIER = com.mission365.app;' ios/App/App.xcodeproj/project.pbxproj || { echo 'Mission 365 bundle identifier mismatch'; exit 1; }
+          if grep -Eq 'IPHONEOS_DEPLOYMENT_TARGET = (1[0-4](\.|;)|[0-9](\.|;))' ios/App/App.xcodeproj/project.pbxproj; then
+            echo 'Mission 365 iOS deployment target is below 15.0'
+            exit 1
+          fi
+          ICON_DIR="ios/App/App/Assets.xcassets/AppIcon.appiconset"
+          shopt -s nullglob
+          icons=("$ICON_DIR"/*.png)
+          [[ ${#icons[@]} -gt 0 ]] || { echo "No Mission 365 iOS app icons found"; exit 1; }
+          for icon in "${icons[@]}"; do
+            alpha="$(sips -g hasAlpha "$icon" 2>/dev/null | awk -F': ' '/hasAlpha/{print $2}')"
+            [[ "$alpha" == "no" ]] || { echo "Alpha channel remains in $icon"; exit 1; }
+          done
+          echo "Verified ${#icons[@]} opaque Mission 365 app icons and iOS 15+ deployment target."
+
+      - name: Build, sign, and upload Mission 365 to TestFlight
+        working-directory: ios/App
+        run: bundle exec fastlane ios beta
