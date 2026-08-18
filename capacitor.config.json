@@ -20,7 +20,7 @@
     "allowMixedContent": false
   },
   "plugins": {
-    "StatusBar": { "style": "DARK", "backgroundColor": "#050816" },
+    "StatusBar": { "style": "LIGHT", "backgroundColor": "#050816" },
     "SplashScreen": {
       "launchShowDuration": 1800,
       "launchAutoHide": true,
