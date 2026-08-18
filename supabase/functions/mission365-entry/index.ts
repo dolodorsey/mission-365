@@ -37,7 +37,9 @@ Deno.serve(async(req:Request)=>{if(req.method==='OPTIONS')return new Response('o
   const {data:vendor,error}=await db.from('mission365_vendor_profiles').upsert(payload,{onConflict:'owner_user_id'}).select('*').single();if(error)throw error;await db.from('mission365_user_roles').upsert({user_id:user.id,role:'vendor',status:'active',updated_at:new Date().toISOString()},{onConflict:'user_id,role'});return json({vendorProfile:vendor,snapshot:await snapshot(db,user)})
  }
  if(action==='register_volunteer'){
-  const opportunityId=String(body?.opportunityId||'');if(!opportunityId)return json({error:'Opportunity is required'},400);const {data:opp}=await db.from('mission365_volunteer_opportunities').select('id,status').eq('id',opportunityId).maybeSingle();if(!opp||opp.status!=='open')return json({error:'This volunteer opportunity is not open'},409);
+  const opportunityId=String(body?.opportunityId||'');if(!opportunityId)return json({error:'Opportunity is required'},400);
+  const {data:opp,error:oppError}=await db.from('mission365_volunteer_opportunities').select('id,status,profile_id').eq('id',opportunityId).maybeSingle();if(oppError)throw oppError;if(!opp||opp.status!=='open')return json({error:'This volunteer opportunity is not open'},409);
+  const {data:profile,error:profileError}=await db.from('mission365_mission_profiles').select('id,is_public,published_at').eq('id',opp.profile_id).maybeSingle();if(profileError)throw profileError;if(!profile?.is_public||!profile.published_at)return json({error:'This volunteer opportunity is not publicly available'},409);
   const {data:signup,error}=await db.from('mission365_volunteer_signups').upsert({opportunity_id:opportunityId,user_id:user.id,status:'registered',note:String(body?.note||'').slice(0,1000),updated_at:new Date().toISOString()},{onConflict:'opportunity_id,user_id'}).select('*').single();if(error)throw error;await db.from('mission365_user_roles').upsert({user_id:user.id,role:'volunteer',status:'active',updated_at:new Date().toISOString()},{onConflict:'user_id,role'});return json({signup})
  }
  if(action==='cancel_volunteer'){
