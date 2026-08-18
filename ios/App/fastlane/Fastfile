@@ -12,6 +12,7 @@ platform :ios do
     key_path = ENV["ASC_KEY_PATH"].to_s.strip
     key_content = ENV["ASC_KEY_CONTENT"].to_s
     UI.user_error!("Missing ASC_KEY_PATH or ASC_KEY_CONTENT") if key_path.empty? && key_content.strip.empty?
+    UI.user_error!("Capacitor CocoaPods workspace is missing") unless File.exist?("App.xcworkspace/contents.xcworkspacedata")
 
     api_key_options = {
       key_id: ENV["ASC_KEY_ID"],
@@ -40,7 +41,7 @@ platform :ios do
     ]
 
     build_app(
-      project: "App.xcodeproj",
+      workspace: "App.xcworkspace",
       scheme: "App",
       export_method: "app-store",
       export_team_id: team_id,
