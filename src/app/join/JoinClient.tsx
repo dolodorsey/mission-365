@@ -1,6 +1,6 @@
 'use client'
 
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Building2, HandHeart, HeartHandshake, Store, Target } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -19,8 +19,8 @@ export default function JoinClient({initialRole}:{initialRole:string}){
  const [token,setToken]=useState<string|null>(null),[snapshot,setSnapshot]=useState<any>(null),[selected,setSelected]=useState<Role|''>((roles.some(r=>r.id===initialRole)?initialRole:'') as Role|''),[busy,setBusy]=useState(false),[message,setMessage]=useState('')
  const [business,setBusiness]=useState({publicName:'',websiteUrl:''})
  const [vendor,setVendor]=useState({publicName:'',contactEmail:'',phone:'',websiteUrl:'',city:'Atlanta',region:'GA',serviceCategories:'',description:''})
- async function load(){const {data:{session}}=await supabase.auth.getSession();setToken(session?.access_token||null);if(!session){setSnapshot(null);return}const r=await fetch(MISSION365_ENTRY_URL,{headers:{apikey:MISSION365_SUPABASE_PUBLISHABLE_KEY,Authorization:`Bearer ${session.access_token}`},cache:'no-store'});const b=await r.json();if(r.ok){setSnapshot(b);if(b.vendorProfile)setVendor({publicName:b.vendorProfile.public_name||'',contactEmail:b.vendorProfile.contact_email||'',phone:b.vendorProfile.phone||'',websiteUrl:b.vendorProfile.website_url||'',city:b.vendorProfile.city||'',region:b.vendorProfile.region||'',serviceCategories:(b.vendorProfile.service_categories||[]).join(', '),description:b.vendorProfile.description||''})}}
- useEffect(()=>{void load()},[])
+ const load=useCallback(async()=>{const {data:{session}}=await supabase.auth.getSession();setToken(session?.access_token||null);if(!session){setSnapshot(null);return}const r=await fetch(MISSION365_ENTRY_URL,{headers:{apikey:MISSION365_SUPABASE_PUBLISHABLE_KEY,Authorization:`Bearer ${session.access_token}`},cache:'no-store'});const b=await r.json();if(r.ok){setSnapshot(b);if(b.vendorProfile)setVendor({publicName:b.vendorProfile.public_name||'',contactEmail:b.vendorProfile.contact_email||'',phone:b.vendorProfile.phone||'',websiteUrl:b.vendorProfile.website_url||'',city:b.vendorProfile.city||'',region:b.vendorProfile.region||'',serviceCategories:(b.vendorProfile.service_categories||[]).join(', '),description:b.vendorProfile.description||''})}},[])
+ useEffect(()=>{const timer=window.setTimeout(()=>void load(),0);return()=>window.clearTimeout(timer)},[load])
  async function post(action:string,payload:any={}){if(!token)throw new Error('Sign in required');const r=await fetch(MISSION365_ENTRY_URL,{method:'POST',headers:{apikey:MISSION365_SUPABASE_PUBLISHABLE_KEY,Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({action,...payload})});const b=await r.json();if(!r.ok)throw new Error(b.error||'Could not update your Mission 365 entry');return b}
  async function run(fn:()=>Promise<any>,success:string,redirect?:string){setBusy(true);setMessage('');try{await fn();setMessage(success);await load();if(redirect)window.location.assign(redirect)}catch(error){setMessage(error instanceof Error?error.message:'Could not continue')}finally{setBusy(false)}}
  async function activate(role:Role,redirect:string){await run(()=>post('activate_role',{role}),'Mission 365 role activated.',redirect)}
