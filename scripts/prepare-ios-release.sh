@@ -48,14 +48,40 @@ if [[ ! -f ios/App/App.xcodeproj/project.pbxproj ]]; then
   echo "Generated Capacitor Xcode project missing" >&2
   exit 1
 fi
-if [[ ! -f ios/App/CapApp-SPM/Package.swift ]]; then
-  echo "Generated Capacitor Swift package missing" >&2
+if [[ ! -f ios/App/Podfile ]]; then
+  echo "Generated Capacitor Podfile missing" >&2
   exit 1
 fi
 
-xcodebuild -resolvePackageDependencies \
-  -project ios/App/App.xcodeproj \
-  -scheme App
+(
+  cd ios/App
+  pod install
+)
+
+if [[ ! -f ios/App/Pods/Pods.xcodeproj/project.pbxproj ]]; then
+  echo "CocoaPods project missing after pod install" >&2
+  exit 1
+fi
+
+WORKSPACE="ios/App/App.xcworkspace"
+WORKSPACE_DATA="$WORKSPACE/contents.xcworkspacedata"
+if [[ ! -f "$WORKSPACE_DATA" ]]; then
+  mkdir -p "$WORKSPACE"
+  cat > "$WORKSPACE_DATA" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<Workspace
+   version = "1.0">
+   <FileRef
+      location = "group:App.xcodeproj">
+   </FileRef>
+   <FileRef
+      location = "group:Pods/Pods.xcodeproj">
+   </FileRef>
+</Workspace>
+EOF
+fi
+
+xcodebuild -workspace "$WORKSPACE" -scheme App -list >/dev/null
 
 ICON_SOURCE="public/brand/mission365-focus.png"
 ICONSET="ios/App/App/Assets.xcassets/AppIcon.appiconset"
@@ -109,4 +135,4 @@ if [[ -f ios/App/App/Info.plist ]]; then
   /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Mission 365" ios/App/App/Info.plist 2>/dev/null || true
 fi
 
-echo "Mission 365 iOS project regenerated, SPM dependencies resolved, deployment target set to 15.0, and branded icons prepared."
+echo "Mission 365 iOS project regenerated, CocoaPods workspace prepared, deployment target set to 15.0, and branded icons prepared."
