@@ -44,6 +44,19 @@ for pbx in Path('ios').rglob('project.pbxproj'):
     pbx.write_text(text)
 PY
 
+if [[ ! -f ios/App/App.xcodeproj/project.pbxproj ]]; then
+  echo "Generated Capacitor Xcode project missing" >&2
+  exit 1
+fi
+if [[ ! -f ios/App/CapApp-SPM/Package.swift ]]; then
+  echo "Generated Capacitor Swift package missing" >&2
+  exit 1
+fi
+
+xcodebuild -resolvePackageDependencies \
+  -project ios/App/App.xcodeproj \
+  -scheme App
+
 ICON_SOURCE="public/brand/mission365-focus.png"
 ICONSET="ios/App/App/Assets.xcassets/AppIcon.appiconset"
 if [[ ! -f "$ICON_SOURCE" ]]; then
@@ -96,4 +109,4 @@ if [[ -f ios/App/App/Info.plist ]]; then
   /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Mission 365" ios/App/App/Info.plist 2>/dev/null || true
 fi
 
-echo "Mission 365 iOS project regenerated, deployment target set to 15.0, and branded icons prepared."
+echo "Mission 365 iOS project regenerated, SPM dependencies resolved, deployment target set to 15.0, and branded icons prepared."
