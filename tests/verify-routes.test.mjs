@@ -7,13 +7,18 @@ describe('verify-routes gate', () => {
     for (const route of [
       '/',
       '/apply',
+      '/join',
       '/login',
       '/missions',
       '/missions/[slug]',
       '/app',
       '/app/donor',
       '/app/mission-owner',
+      '/app/mission-owner/profile',
+      '/app/mission-owner/registry',
       '/app/business',
+      '/app/vendor',
+      '/app/volunteer',
       '/app/admin',
       '/legal',
       '/download',
@@ -23,17 +28,19 @@ describe('verify-routes gate', () => {
     ]) {
       assert.ok(EXPECTED_ROUTES.includes(route), `EXPECTED_ROUTES is missing ${route}`)
     }
-    assert.equal(EXPECTED_ROUTES.length, 15)
+    assert.equal(EXPECTED_ROUTES.length, 20)
   })
 
   it('passes when the build contains every expected route', () => {
     assert.deepEqual(findMissingRoutes(new Set(EXPECTED_ROUTES)), [])
   })
 
-  it('fails when the build is truncated, as the 11-route upload deploy was', () => {
+  it('fails loudly when a production build is truncated', () => {
     const truncated = new Set(EXPECTED_ROUTES.slice(0, 11))
     const missing = findMissingRoutes(truncated)
-    assert.equal(missing.length, 4)
+    assert.equal(missing.length, EXPECTED_ROUTES.length - 11)
+    assert.ok(missing.includes('/app/vendor'))
+    assert.ok(missing.includes('/app/volunteer'))
     assert.ok(missing.includes('/sitemap.xml'))
   })
 })
