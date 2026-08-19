@@ -15,7 +15,10 @@ function Card({profile}:{profile:Profile}){return <article className={`mission-d
 export default async function Missions(){
  const supabase=createClient(MISSION365_SUPABASE_URL,MISSION365_SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:false,autoRefreshToken:false}})
  const {data}=await supabase.from('mission365_public_mission_intelligence').select('id,slug,title,summary,category,city,region,lifecycle_status,fundraising_status,cover_media_url,source_status,intelligence_score,verified_impact_count,evidenced_impact_count,verified_testimonial_count,open_opportunity_count,active_registry_count').eq('is_public',true).not('published_at','is',null).order('intelligence_score',{ascending:false}).order('published_at',{ascending:false})
- const profiles=(data||[]) as Profile[],current=profiles.filter(p=>p.lifecycle_status==='current'),past=profiles.filter(p=>p.lifecycle_status==='past')
+ const profiles=(data||[]) as Profile[]
+ // Current missions are actionable customer-facing programs: source verification is an eligibility gate, not a score bonus.
+ // Past records may remain visible in the archive while source verification is still in progress, but are explicitly labeled as such.
+ const current=profiles.filter(p=>p.lifecycle_status==='current'&&p.source_status==='sourced'),past=profiles.filter(p=>p.lifecycle_status==='past')
  return <main className="status-page"><div className="status-card mission-directory-shell">
   <BadgeCheck size={44}/><p className="eyebrow">MISSION 365 DIRECTORY</p><h1>Missions are living profiles.</h1><p>Every mission keeps one public home for its story, photos and video, posts, verified testimonials, volunteer opportunities, specific registry needs, fundraising status, source record, and impact history.</p>
   <section className="workspace-panel"><div className="directory-heading"><div><p className="eyebrow"><Clock3 size={14}/> CURRENT MISSIONS</p><h2>{current.length} active profiles.</h2></div><Link className="button" href="/join">Choose how you participate</Link></div><div className="profile-directory">{current.map(p=><Card key={p.id} profile={p}/>)}</div></section>

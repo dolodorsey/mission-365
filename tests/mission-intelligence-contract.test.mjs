@@ -12,6 +12,12 @@ test('public mission directory ranks verified intelligence before publication re
   assert.ok(page.indexOf("order('intelligence_score'") < page.indexOf("order('published_at'"))
 })
 
+test('current Mission 365 profiles require source verification before customer-facing eligibility',()=>{
+  assert.match(page,/p=>p\.lifecycle_status==='current'&&p\.source_status==='sourced'/)
+  assert.match(page,/p=>p\.lifecycle_status==='past'/)
+  assert.match(page,/Archive source verification in progress/)
+})
+
 test('Mission 365 intelligence requires source legitimacy and evidence-aware signals',()=>{
   assert.match(migration,/p\.source_status='sourced'/)
   assert.match(migration,/evidenced_impact_count/)
