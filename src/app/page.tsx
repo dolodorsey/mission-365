@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { ArrowRight, BadgeCheck, BarChart3, Building2, CalendarHeart, CheckCircle2, Globe2, HeartHandshake, LockKeyhole, ReceiptText, ShieldCheck, Sparkles, Users2 } from 'lucide-react'
+import ApplicationNudge from '@/components/ApplicationNudge'
 
 const roles = [
   [HeartHandshake, 'Everyday donors', 'Give once or build a recurring plan around the causes that matter to you.'],
@@ -36,6 +37,7 @@ export default function Home() {
   const givingLive=Boolean(health?.payments?.liveGiving&&health.liveMissions>0)
 
   return <main>
+    <ApplicationNudge/>
     <nav className="nav-shell" aria-label="Primary navigation">
       <Link href="/" className="brand"><span className="brand-mark">M</span><span>MISSION <b>365</b></span></Link>
       <div className="nav-links"><a href="#model">How it works</a><Link href="/missions">Missions</Link><Link href="/join">Join</Link><Link href="/login">Sign in</Link></div>
