@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 
-const migration=fs.readFileSync(new URL('../supabase/migrations/20260902155000_mission365_revoke_client_crm_grants.sql',import.meta.url),'utf8')
+const migration=fs.readFileSync(new URL('../supabase/migrations/20260902154713_mission365_revoke_client_crm_grants.sql',import.meta.url),'utf8')
 const executable=migration.replace(/--.*$/gm,'').toLowerCase()
 
 test('Mission 365 CRM control-plane tables deny direct browser-role access',()=>{
