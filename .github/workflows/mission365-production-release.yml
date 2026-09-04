@@ -59,6 +59,9 @@ jobs:
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
 
+      - name: Enforce Next.js security floor
+        run: node scripts/verify-next-security-floor.mjs
+
       - name: Lint
         run: npm run lint
 

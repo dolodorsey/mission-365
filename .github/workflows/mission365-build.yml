@@ -21,6 +21,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm audit --omit=dev --audit-level=high
+      - name: Enforce Next.js security floor
+        run: node scripts/verify-next-security-floor.mjs
       - run: npm run lint
       - run: npx tsc --noEmit
       - run: npm run test
