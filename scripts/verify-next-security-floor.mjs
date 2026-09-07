@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 
 const FLOOR = [16, 3, 3];
 const FLOOR_TEXT = FLOOR.join('.');
+const EXACT_STABLE_SEMVER = /^\d+\.\d+\.\d+$/;
 
 function parseVersion(input, label) {
   const value = String(input ?? '').trim().replace(/^[~^<>=\s]*/, '');
@@ -10,6 +11,13 @@ function parseVersion(input, label) {
     throw new Error(`${label} must resolve to a concrete semver version; received ${JSON.stringify(input)}`);
   }
   return match.slice(1, 4).map(Number);
+}
+
+function assertExactStableDeclaration(value, label) {
+  const normalized = String(value ?? '').trim();
+  if (!EXACT_STABLE_SEMVER.test(normalized)) {
+    throw new Error(`${label} must be pinned to an exact stable semver version; received ${JSON.stringify(value)}`);
+  }
 }
 
 function gte(version, floor) {
@@ -35,6 +43,8 @@ const declaredEslintNext = pkg.devDependencies?.['eslint-config-next'];
 const resolvedNext = lock.packages?.['node_modules/next']?.version;
 const resolvedEslintNext = lock.packages?.['node_modules/eslint-config-next']?.version;
 
+assertExactStableDeclaration(declaredNext, 'package.json dependencies.next');
+assertExactStableDeclaration(declaredEslintNext, 'package.json devDependencies.eslint-config-next');
 assertFloor(declaredNext, 'package.json dependencies.next');
 assertFloor(declaredEslintNext, 'package.json devDependencies.eslint-config-next');
 assertFloor(resolvedNext, 'package-lock.json node_modules/next');
@@ -48,4 +58,4 @@ if (parseVersion(declaredEslintNext, 'declared eslint-config-next').join('.') !=
   throw new Error(`Mission 365 eslint-config-next declaration/resolution mismatch: declared=${declaredEslintNext} resolved=${resolvedEslintNext}`);
 }
 
-console.log(`Mission 365 Next.js security floor verified: next=${resolvedNext}, eslint-config-next=${resolvedEslintNext}, floor=${FLOOR_TEXT}`);
+console.log(`Mission 365 Next.js security floor verified: next=${resolvedNext}, eslint-config-next=${resolvedEslintNext}, floor=${FLOOR_TEXT}, declarations=exact-stable`);
