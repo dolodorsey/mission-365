@@ -17,10 +17,7 @@ export default function ApplicationNudge(){
   },[])
 
   useEffect(()=>{
-    if(!backendAvailable){
-      setOpen(false)
-      return
-    }
+    if(!backendAvailable)return
     try{
       const last=Number(localStorage.getItem(KEY)||0)
       if(Date.now()-last>7*24*60*60*1000){
