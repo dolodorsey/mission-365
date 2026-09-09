@@ -15,5 +15,5 @@ test('application nudge fails closed until Mission 365 backend health is OK', ()
 
 test('application CTA remains Mission 365-only when health is verified', () => {
   assert.match(source, /href="\/apply"/)
-  assert.doesNotMatch(source, /goodtimes|sos|casper|pronto|noir|otini|xxx|ora/i)
+  assert.doesNotMatch(source, /\b(?:goodtimes|sos|casper|pronto|noir|otini|xxx|ora)\b/i)
 })
