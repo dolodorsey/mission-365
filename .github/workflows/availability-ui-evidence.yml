@@ -91,10 +91,10 @@ jobs:
               ctx.close()
             for scenario in ['failure-retry','malformed','timeout']:
               ctx=browser.new_context(viewport={'width':390,'height':844},service_workers='block',reduced_motion='reduce');ctx.route('**/*',guard)
-              page=ctx.new_page();errors=[];calls=[];page.on('pageerror',lambda e:errors.append(str(e)))
+              page=ctx.new_page();errors=[];calls=[];phase={'recovered':False};page.on('pageerror',lambda e:errors.append(str(e)))
               def health(route):
                 calls.append(1)
-                if scenario=='failure-retry' and len(calls)>1:route.fulfill(status=200,content_type='application/json',body=json.dumps(healthy))
+                if scenario=='failure-retry' and phase['recovered']:route.fulfill(status=200,content_type='application/json',body=json.dumps(healthy))
                 elif scenario=='malformed':route.fulfill(status=200,content_type='application/json',body='{}')
                 elif scenario=='timeout':
                   page.wait_for_timeout(9500)
@@ -109,6 +109,7 @@ jobs:
                 assert not errors,errors
                 snap(page,'390-health-'+scenario)
                 if scenario=='failure-retry':
+                  phase['recovered']=True
                   retry.click();page.locator('.hero-actions a').first.wait_for(timeout=10000)
                   assert page.get_by_text('Live giving active',exact=True).count()==0,'Zero missions must not imply live giving'
                   assert retry.count()==0
