@@ -1,0 +1,129 @@
+name: MISSION 365 availability UI evidence
+on:
+  pull_request:
+    branches: [main]
+    paths: ['src/**', 'tests/**', 'package*.json', '.github/workflows/availability-ui-evidence.yml']
+permissions:
+  contents: read
+concurrency:
+  group: mission365-availability-evidence-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Record source
+        run: mkdir -p quality-evidence && git rev-parse HEAD > quality-evidence/source-sha.txt
+      - name: Locked install
+        id: install
+        run: set -o pipefail; npm ci 2>&1 | tee quality-evidence/install.log
+      - name: Lint
+        if: always() && steps.install.outcome == 'success'
+        run: set -o pipefail; npm run lint 2>&1 | tee quality-evidence/lint.log
+      - name: Full unit and contract suite
+        if: always() && steps.install.outcome == 'success'
+        run: set -o pipefail; npm test 2>&1 | tee quality-evidence/tests.log
+      - name: Production build and typecheck
+        id: build
+        if: always() && steps.install.outcome == 'success'
+        env:
+          VERCEL_GIT_COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
+        run: set -o pipefail; npm run build 2>&1 | tee quality-evidence/build.log
+      - name: Production dependency audit
+        if: always() && steps.install.outcome == 'success'
+        run: set -o pipefail; npm audit --omit=dev --audit-level=high 2>&1 | tee quality-evidence/audit.log
+      - name: Browser prerequisites
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          python -m pip install playwright==1.57.0
+          python -m playwright install --with-deps chromium
+      - name: Start exact built app
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          npm run start -- -p 4180 > quality-evidence/server.log 2>&1 &
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:4180/ >/dev/null && exit 0; sleep 1; done
+          exit 1
+      - name: Public screens and recovery journeys
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          python - <<'PY'
+          import json,pathlib,re,time
+          from playwright.sync_api import sync_playwright
+          out=pathlib.Path('quality-evidence');results=[];failures=[]
+          base='http://127.0.0.1:4180';root=pathlib.Path('src/app')
+          routes=sorted(set('/'+str(f.parent.relative_to(root)).replace('\\','/').strip('.') for f in root.rglob('page.*') if f.suffix in ('.jsx','.tsx','.js') and '[' not in str(f) and '(' not in str(f)))
+          def guard(route):
+            if route.request.method not in ('GET','HEAD','OPTIONS'):
+              route.fulfill(status=503,content_type='application/json',body='{"error":"read_only_browser_audit"}')
+            else: route.continue_()
+          def snap(page,name):
+            page.screenshot(path=str(out/(name+'.png')),full_page=True,animations='disabled',timeout=20000)
+          healthy={'service':'mission-365','status':'ok','liveMissions':0,'verificationCandidates':0,'payments':{'stripeApi':False,'webhook':False,'liveGiving':False}}
+          with sync_playwright() as p:
+            browser=p.chromium.launch()
+            for width,height in [(390,844),(768,1024),(1440,900)]:
+              ctx=browser.new_context(viewport={'width':width,'height':height},service_workers='block',reduced_motion='reduce')
+              ctx.route('**/*',guard)
+              for path in routes:
+                page=ctx.new_page();errors=[]
+                page.on('pageerror',lambda e:errors.append(str(e)))
+                try:
+                  r=page.goto(base+path,wait_until='domcontentloaded',timeout=25000)
+                  page.wait_for_timeout(1500)
+                  text=page.locator('body').inner_text()
+                  overflow=page.evaluate('Math.max(0,document.documentElement.scrollWidth-innerWidth)')
+                  name=str(width)+'-'+(path.strip('/').replace('/','-') or 'home')
+                  page.screenshot(path=str(out/(name+'.png')),full_page=width==390,animations='disabled',timeout=15000)
+                  row={'route':path,'viewport':width,'status':r.status,'text_length':len(text),'horizontal_overflow':overflow,'page_errors':errors,'headings':page.locator('h1,h2').all_text_contents()[:8]}
+                  results.append(row)
+                  if r.status>=400 or len(text.strip())<20 or overflow>2 or errors:failures.append(row)
+                except Exception as e:failures.append({'route':path,'viewport':width,'error':str(e)})
+                finally:page.close()
+              ctx.close()
+            for scenario in ['failure-retry','malformed','timeout']:
+              ctx=browser.new_context(viewport={'width':390,'height':844},service_workers='block',reduced_motion='reduce');ctx.route('**/*',guard)
+              page=ctx.new_page();errors=[];calls=[];page.on('pageerror',lambda e:errors.append(str(e)))
+              def health(route):
+                calls.append(1)
+                if scenario=='failure-retry' and len(calls)>1:route.fulfill(status=200,content_type='application/json',body=json.dumps(healthy))
+                elif scenario=='malformed':route.fulfill(status=200,content_type='application/json',body='{}')
+                elif scenario=='timeout':
+                  page.wait_for_timeout(9500)
+                  try:route.fulfill(status=200,content_type='application/json',body=json.dumps(healthy))
+                  except Exception:pass
+                else:route.fulfill(status=503,content_type='application/json',body='{"status":"degraded"}')
+              page.route('**/api/health*',health)
+              try:
+                page.goto(base,wait_until='domcontentloaded',timeout=30000)
+                retry=page.get_by_role('button',name='Retry connection',exact=True);retry.wait_for(timeout=15000)
+                assert page.locator('.hero-actions a').count()==0,'Unavailable hero actions must not be links'
+                assert not errors,errors
+                snap(page,'390-health-'+scenario)
+                if scenario=='failure-retry':
+                  retry.click();page.locator('.hero-actions a').first.wait_for(timeout=10000)
+                  assert page.get_by_text('Live giving active',exact=True).count()==0,'Zero missions must not imply live giving'
+                  assert retry.count()==0
+                  snap(page,'390-health-recovered-fixture')
+                results.append({'journey':scenario,'passed':True,'fixture':True,'live_giving_enabled':False})
+              except Exception as e:failures.append({'journey':scenario,'error':str(e)})
+              finally:ctx.close()
+            browser.close()
+          (out/'browser-results.json').write_text(json.dumps({'app':'MISSION 365','source':'exact local production build','mode':'unauthenticated public pages plus controlled recovery fixtures','real_donations':0,'real_submissions':0,'results':results,'failures':failures},indent=2))
+          print(json.dumps({'screens':len(results),'failures':failures},indent=2))
+          if failures:raise SystemExit(1)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mission365-ui-evidence-${{ github.event.pull_request.head.sha }}
+          path: quality-evidence/
+          retention-days: 14
