@@ -41,8 +41,6 @@ export default function Home() {
   useEffect(()=>{
     let live=true
     const controller=new AbortController()
-    setHealth(null)
-    setHealthState('checking')
     // Bound the visible loading state, including a stalled response body.
     const timeout=setTimeout(()=>{
       if(live){setHealth(null);setHealthState('degraded')}
@@ -86,7 +84,7 @@ export default function Home() {
     </nav>
 
     {backendBlocked&&<section className="section" aria-live="polite">
-      <div className="launch-state" role="status" style={{flexWrap:'wrap'}}><ShieldCheck/><div style={{flex:'1 1 240px'}}><strong>Mission 365 services are temporarily unavailable.</strong><span>We could not verify service availability. Account, mission and giving actions stay paused until the connection is confirmed. Your information is not being sent to another service.</span></div><button type="button" className="button button-small" onClick={()=>setHealthAttempt(attempt=>attempt+1)}>Retry connection</button></div>
+      <div className="launch-state" role="status" style={{flexWrap:'wrap'}}><ShieldCheck/><div style={{flex:'1 1 240px'}}><strong>Mission 365 services are temporarily unavailable.</strong><span>We could not verify service availability. Account, mission and giving actions stay paused until the connection is confirmed. No submissions are being routed into an unverified fallback.</span></div><button type="button" className="button button-small" onClick={()=>{setHealth(null);setHealthState('checking');setHealthAttempt(attempt=>attempt+1)}}>Retry connection</button></div>
     </section>}
 
     <section className="hero">
