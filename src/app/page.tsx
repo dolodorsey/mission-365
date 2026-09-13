@@ -36,28 +36,40 @@ function BackendLink({enabled,href,className='',children}:BackendLinkProps){
 export default function Home() {
   const [health,setHealth]=useState<HealthSnapshot|null>(null)
   const [healthState,setHealthState]=useState<HealthState>('checking')
+  const [healthAttempt,setHealthAttempt]=useState(0)
 
   useEffect(()=>{
     let live=true
-    fetch('/api/health',{cache:'no-store'})
+    const controller=new AbortController()
+    // Bound the visible loading state, including a stalled response body.
+    const timeout=setTimeout(()=>{
+      if(live){setHealth(null);setHealthState('degraded')}
+      controller.abort()
+    },8000)
+    fetch('/api/health',{cache:'no-store',signal:controller.signal})
       .then(async response=>{
         if(!response.ok) throw new Error(`health ${response.status}`)
         return response.json()
       })
       .then(data=>{
-        if(live){
+        if(!data || !Number.isSafeInteger(data.liveMissions) || data.liveMissions<0
+          || !Number.isSafeInteger(data.verificationCandidates) || data.verificationCandidates<0
+          || typeof data.payments?.stripeApi!=='boolean'
+          || typeof data.payments?.webhook!=='boolean'
+          || typeof data.payments?.liveGiving!=='boolean'){
+          throw new Error('Invalid Mission 365 availability response')
+        }
+        if(live&&!controller.signal.aborted){
           setHealth(data as HealthSnapshot)
           setHealthState('healthy')
         }
       })
       .catch(()=>{
-        if(live){
-          setHealth(null)
-          setHealthState('degraded')
-        }
+        if(live){setHealth(null);setHealthState('degraded')}
       })
-    return()=>{live=false}
-  },[])
+      .finally(()=>clearTimeout(timeout))
+    return()=>{live=false;clearTimeout(timeout);controller.abort()}
+  },[healthAttempt])
 
   const backendAvailable=healthState==='healthy'
   const backendBlocked=healthState==='degraded'
@@ -72,7 +84,7 @@ export default function Home() {
     </nav>
 
     {backendBlocked&&<section className="section" aria-live="polite">
-      <div className="launch-state" role="status"><ShieldCheck/><div><strong>Mission 365 services are temporarily unavailable.</strong><span>Applications, sign-in, mission browsing, dashboards, and giving are paused while the dedicated Mission 365 backend is restored. No submissions are being routed into an unverified fallback.</span></div></div>
+      <div className="launch-state" role="status" style={{flexWrap:'wrap'}}><ShieldCheck/><div style={{flex:'1 1 240px'}}><strong>Mission 365 services are temporarily unavailable.</strong><span>We could not verify service availability. Account, mission and giving actions stay paused until the connection is confirmed. No submissions are being routed into an unverified fallback.</span></div><button type="button" className="button button-small" onClick={()=>{setHealth(null);setHealthState('checking');setHealthAttempt(attempt=>attempt+1)}}>Retry connection</button></div>
     </section>}
 
     <section className="hero">

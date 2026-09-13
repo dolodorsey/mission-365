@@ -9,7 +9,7 @@ export async function GET() {
   let backendStatus = 'degraded'
 
   try {
-    const response = await fetch(backend, { cache: 'no-store' })
+    const response = await fetch(backend, { cache: 'no-store', signal: AbortSignal.timeout(6500) })
     if (response.ok) {
       launch = await response.json()
       backendStatus = 'ok'
