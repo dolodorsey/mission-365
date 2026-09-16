@@ -34,7 +34,8 @@ export default function KHGTrackingHost(){
         })})
         if(!response.ok)return
         const result=await response.json().catch(()=>null)
-        if(result?.tracking_code){code=result.tracking_code;setStored(`khg_track:${BRAND_KEY}`,code)}
+        const returnedCode=typeof result?.tracking_code==='string'?result.tracking_code:''
+        if(returnedCode){code=returnedCode;setStored(`khg_track:${BRAND_KEY}`,returnedCode)}
       }catch{}
     }
     ;(window as unknown as {khgTrack?:typeof track}).khgTrack=track
