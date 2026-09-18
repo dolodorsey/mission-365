@@ -1,3 +1,13 @@
 import { ImageResponse } from 'next/og'
 export const runtime='edge'
-export async function GET(request:Request){const requested=Number(new URL(request.url).searchParams.get('size')||512);const size=[180,192,512].includes(requested)?requested:512;return new ImageResponse(<div style={{width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center',position:'relative',overflow:'hidden',background:'radial-gradient(circle at 25% 20%,rgba(154,77,255,.35),transparent 40%),linear-gradient(145deg,#101940,#050816 74%)'}}><div style={{position:'absolute',width:'82%',height:'82%',border:'2px solid rgba(68,200,255,.28)',borderRadius:'50%'}}/><div style={{display:'flex',alignItems:'center',justifyContent:'center',width:'66%',height:'66%',borderRadius:'50%',background:'conic-gradient(#ff8a35,#73e46b,#44c8ff,#9a4dff,#e849c2,#ff8a35)',boxShadow:'0 26px 80px rgba(154,77,255,.35)',color:'white',fontFamily:'Arial,sans-serif',fontWeight:900,fontSize:size*.24}}>365</div><div style={{position:'absolute',bottom:'7%',display:'flex',color:'#f7f8ff',fontFamily:'Arial,sans-serif',fontWeight:900,fontSize:Math.max(10,size*.038),letterSpacing:Math.max(2,size*.01)}}>MISSION</div></div>,{width:size,height:size})}
+export async function GET(request:Request){
+  const requested=Number(new URL(request.url).searchParams.get('size')||512)
+  const size=[180,192,512].includes(requested)?requested:512
+  const logo=new URL('/app-logo.png',request.url).toString()
+  return new ImageResponse(
+    <div style={{width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center',background:'#050816',position:'relative',overflow:'hidden'}}>
+      <div style={{position:'absolute',inset:'5%',borderRadius:'24%',border:'2px solid rgba(154,77,255,.38)'}}/>
+      <img src={logo} alt="MISSION 365" style={{width:'84%',height:'84%',objectFit:'contain'}}/>
+    </div>,{width:size,height:size}
+  )
+}
