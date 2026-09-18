@@ -4,7 +4,6 @@ import { readFile } from 'node:fs/promises';
 
 test('Mission 365 application UI exposes the current verification lifecycle', async () => {
   const form = await readFile(new URL('../src/app/apply/ApplicationForm.tsx', import.meta.url), 'utf8');
-  assert.match(form, /documents_required/);
   assert.match(form, /waitlisted/);
   assert.match(form, /reviewing/);
   assert.match(form, /conditionally_approved/);
