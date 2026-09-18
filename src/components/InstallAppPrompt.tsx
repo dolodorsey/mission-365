@@ -4,6 +4,19 @@ import { useEffect,useState } from 'react'
 
 type PromptEvent=Event&{prompt:()=>Promise<{outcome:'accepted'|'dismissed'}>}
 declare global{interface Window{khgTrack?:(eventType:string,metadata?:Record<string,unknown>)=>Promise<void>}}
+
+function forceInstall(){try{return new URLSearchParams(location.search).get('install')==='1'}catch{return false}}
+function InstallQr(){
+  const [qr,setQr]=useState('');
+  useEffect(()=>{if(typeof window==='undefined'||window.innerWidth<760)return;try{const u=new URL(location.href);u.hash='';u.search='';u.searchParams.set('install','1');setQr('https://wfkohcwxxsrhcxhepfql.supabase.co/functions/v1/app-install-qr?url='+encodeURIComponent(u.toString()))}catch{}},[]);
+  if(!qr)return null;
+  return <aside aria-label="Scan to install app" style={{position:'fixed',right:22,bottom:22,zIndex:2147483002,width:188,padding:12,borderRadius:20,background:'rgba(7,8,11,.97)',border:'1px solid rgba(255,255,255,.16)',boxShadow:'0 24px 70px rgba(0,0,0,.48)',color:'#fff',fontFamily:'Arial,sans-serif'}}>
+    <img src={qr} alt="QR code to install this app" width="164" height="164" style={{display:'block',width:'100%',height:'auto',borderRadius:12,background:'#fff',padding:6}}/>
+    <strong style={{display:'block',marginTop:10,fontSize:10,letterSpacing:'.14em'}}>SCAN TO GET THE APP</strong>
+    <small style={{display:'block',marginTop:5,color:'rgba(255,255,255,.62)',fontSize:9,lineHeight:1.45}}>iPhone: Share → Add to Home Screen → Open as Web App → Add. Android: tap Install App.</small>
+  </aside>
+}
+
 const DISMISS=7*24*60*60*1000
 const get=(k:string)=>{try{return localStorage.getItem(k)}catch{return null}}
 const set=(k:string,v:string)=>{try{localStorage.setItem(k,v)}catch{}}
@@ -13,11 +26,13 @@ const track=(type:string,data:Record<string,unknown>={})=>{try{void window.khgTr
 
 export default function InstallAppPrompt(){
  const[prompt,setPrompt]=useState<PromptEvent|null>(null),[show,setShow]=useState(false),[steps,setSteps]=useState(false),[apple]=useState(()=>typeof navigator!=='undefined'&&ios()),[installed,setInstalled]=useState(()=>typeof window!=='undefined'&&standalone())
- useEffect(()=>{if(installed)return;const isApple=apple;if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>undefined);const dismissed=Number(get('mission365:pwa-dismissed')||0);const eligible=!dismissed||Date.now()-dismissed>DISMISS;const before=(e:Event)=>{e.preventDefault();setPrompt(e as PromptEvent);if(eligible)setTimeout(()=>setShow(true),1700)};const done=()=>{setInstalled(true);setShow(false);track('app_install',{platform:isApple?'ios':'web',variant:'mission365_pwa'})};addEventListener('beforeinstallprompt',before);addEventListener('appinstalled',done);let t=0;if(eligible&&isApple)t=window.setTimeout(()=>setShow(true),4600);return()=>{removeEventListener('beforeinstallprompt',before);removeEventListener('appinstalled',done);if(t)clearTimeout(t)}},[apple,installed])
+ useEffect(()=>{if(installed)return;const isApple=apple;if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>undefined);const dismissed=Number(get('mission365:pwa-dismissed')||0);const eligible=!dismissed||Date.now()-dismissed>DISMISS;
+    if(forceInstall())window.setTimeout(()=>setShow(true),120);const before=(e:Event)=>{e.preventDefault();setPrompt(e as PromptEvent);if(eligible)setTimeout(()=>setShow(true),1700)};const done=()=>{setInstalled(true);setShow(false);track('app_install',{platform:isApple?'ios':'web',variant:'mission365_pwa'})};addEventListener('beforeinstallprompt',before);addEventListener('appinstalled',done);let t=0;if(eligible&&isApple)t=window.setTimeout(()=>setShow(true),4600);return()=>{removeEventListener('beforeinstallprompt',before);removeEventListener('appinstalled',done);if(t)clearTimeout(t)}},[apple,installed])
  if(installed||!show)return null
  const close=()=>{set('mission365:pwa-dismissed',String(Date.now()));setShow(false);track('cta_click',{cta:'pwa_prompt_dismiss'})}
  const install=async()=>{track('app_install_click',{platform:apple?'ios':'web',variant:prompt?'native_prompt':'instructions'});if(prompt){const result=await prompt.prompt();setPrompt(null);if(result.outcome==='accepted')setShow(false);return}setSteps(true)}
- return <div className="m365-install" role="dialog" aria-modal="true" aria-label="Install Mission 365"><section>
+ return <div className="m365-install" role="dialog" aria-modal="true" aria-label="Install Mission 365">
+    <InstallQr/><section>
   <button className="x" onClick={close} aria-label="Close">×</button><div className="orb"><div className="ring r1"/><div className="ring r2"/><div className="phone"><i/><b>365</b><small>MISSION</small></div></div>
   {!steps?<div className="copy"><p className="eyebrow2">IMPACT DOESN’T TAKE DAYS OFF.</p><h2>365 DAYS.<br/><em>ONE TAP</em><br/>AWAY.</h2><p>Give. Verify. Track impact. Keep your missions, updates and year-round giving within reach from your Home Screen.</p><div className="chips"><span>GIVE</span><b>•</b><span>VERIFY</span><b>•</b><span>TRACK</span></div><button className="go" onClick={install}><span>{prompt?'INSTALL MISSION 365':'ADD MISSION 365'}</span><strong>↗</strong></button><button className="later" onClick={close}>Continue in browser</button></div>:
   <div className="copy"><p className="eyebrow2">{apple?'IPHONE / HOME SCREEN':'INSTALL / HOME SCREEN'}</p><h2>THREE TAPS.<br/><em>ALL YEAR.</em></h2><ol><li><b>01</b><div><strong>{apple?'Tap Share':'Open browser menu'}</strong><small>{apple?'Use Safari’s Share button.':'Open your browser install menu.'}</small></div></li><li><b>02</b><div><strong>Add to Home Screen</strong><small>Select Add to Home Screen / Install App.</small></div></li><li><b>03</b><div><strong>Tap Add</strong><small>Mission 365 lands beside your other apps.</small></div></li></ol><button className="go" onClick={close}>GOT IT</button></div>}
