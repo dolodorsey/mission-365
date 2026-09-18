@@ -12,7 +12,7 @@ function InstallQr(){
   if(!qr)return null;
   return <aside aria-label="Scan to install app" style={{position:'fixed',right:22,bottom:22,zIndex:2147483002,width:188,padding:12,borderRadius:20,background:'rgba(7,8,11,.97)',border:'1px solid rgba(255,255,255,.16)',boxShadow:'0 24px 70px rgba(0,0,0,.48)',color:'#fff',fontFamily:'Arial,sans-serif'}}>
     <img src={qr} alt="QR code to install this app" width="164" height="164" style={{display:'block',width:'100%',height:'auto',borderRadius:12,background:'#fff',padding:6}}/>
-    <strong style={{display:'block',marginTop:10,fontSize:10,letterSpacing:'.14em'}}>SCAN TO GET THE APP</strong>
+    <strong style={{display:'block',marginTop:10,fontSize:10,letterSpacing:'.14em'}}>SCAN TO GET MISSION 365</strong>
     <small style={{display:'block',marginTop:5,color:'rgba(255,255,255,.62)',fontSize:9,lineHeight:1.45}}>iPhone: Share → Add to Home Screen → Open as Web App → Add. Android: tap Install App.</small>
   </aside>
 }
@@ -26,9 +26,10 @@ const track=(type:string,data:Record<string,unknown>={})=>{try{void window.khgTr
 
 export default function InstallAppPrompt(){
  const[prompt,setPrompt]=useState<PromptEvent|null>(null),[show,setShow]=useState(false),[steps,setSteps]=useState(false),[apple]=useState(()=>typeof navigator!=='undefined'&&ios()),[installed,setInstalled]=useState(()=>typeof window!=='undefined'&&standalone())
- useEffect(()=>{if(installed)return;const isApple=apple;if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>undefined);const dismissed=Number(get('mission365:pwa-dismissed')||0);const eligible=!dismissed||Date.now()-dismissed>DISMISS;
+ useEffect(()=>{if(installed)return;const isApple=apple;if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>undefined);const dismissed=Number(get('mission365:pwa-dismissed')||0);const eligible=forceInstall()||!dismissed||Date.now()-dismissed>DISMISS;
     if(forceInstall())window.setTimeout(()=>setShow(true),120);const before=(e:Event)=>{e.preventDefault();setPrompt(e as PromptEvent);if(eligible)setTimeout(()=>setShow(true),1700)};const done=()=>{setInstalled(true);setShow(false);track('app_install',{platform:isApple?'ios':'web',variant:'mission365_pwa'})};addEventListener('beforeinstallprompt',before);addEventListener('appinstalled',done);let t=0;if(eligible&&isApple)t=window.setTimeout(()=>setShow(true),4600);return()=>{removeEventListener('beforeinstallprompt',before);removeEventListener('appinstalled',done);if(t)clearTimeout(t)}},[apple,installed])
- if(installed||!show)return null
+ if(installed)return null
+ if(!show)return <button aria-label="Get Mission 365 app" onClick={()=>{setSteps(false);setShow(true);track('cta_click',{cta:'mission365_persistent_get_app'})}} style={{position:'fixed',right:16,bottom:18,zIndex:2147482500,border:0,borderRadius:999,padding:'13px 17px',background:'linear-gradient(100deg,#9a4dff,#e849c2,#ff8a35)',color:'#fff',font:'900 11px/1 Arial',letterSpacing:'.08em',boxShadow:'0 16px 44px rgba(0,0,0,.35)',cursor:'pointer'}}>GET MISSION 365 ↗</button>
  const close=()=>{set('mission365:pwa-dismissed',String(Date.now()));setShow(false);track('cta_click',{cta:'pwa_prompt_dismiss'})}
  const install=async()=>{track('app_install_click',{platform:apple?'ios':'web',variant:prompt?'native_prompt':'instructions'});if(prompt){const result=await prompt.prompt();setPrompt(null);if(result.outcome==='accepted')setShow(false);return}setSteps(true)}
  return <div className="m365-install" role="dialog" aria-modal="true" aria-label="Install Mission 365">
