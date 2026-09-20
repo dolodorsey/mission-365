@@ -8,7 +8,7 @@ declare global{interface Window{khgTrack?:(eventType:string,metadata?:Record<str
 function forceInstall(){try{return new URLSearchParams(location.search).get('install')==='1'}catch{return false}}
 function InstallQr(){
   const [qr,setQr]=useState('');
-  useEffect(()=>{if(typeof window==='undefined'||window.innerWidth<760)return;try{const u=new URL(location.href);u.hash='';u.search='';u.searchParams.set('install','1');setQr('https://wfkohcwxxsrhcxhepfql.supabase.co/functions/v1/app-install-qr?url='+encodeURIComponent(u.toString()))}catch{}},[]);
+  useEffect(()=>{if(typeof window==='undefined'||window.innerWidth<760)return;let timer=0;try{const u=new URL(location.href);u.hash='';u.search='';u.searchParams.set('install','1');const value='https://wfkohcwxxsrhcxhepfql.supabase.co/functions/v1/app-install-qr?url='+encodeURIComponent(u.toString());timer=window.setTimeout(()=>setQr(value),0)}catch{}return()=>{if(timer)window.clearTimeout(timer)}},[]);
   if(!qr)return null;
   return <aside aria-label="Scan to install app" style={{position:'fixed',right:22,bottom:22,zIndex:2147483002,width:188,padding:12,borderRadius:20,background:'rgba(7,8,11,.97)',border:'1px solid rgba(255,255,255,.16)',boxShadow:'0 24px 70px rgba(0,0,0,.48)',color:'#fff',fontFamily:'Arial,sans-serif'}}>
     <img src={qr} alt="QR code to install this app" width="164" height="164" style={{display:'block',width:'100%',height:'auto',borderRadius:12,background:'#fff',padding:6}}/>
