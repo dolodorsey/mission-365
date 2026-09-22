@@ -6,7 +6,7 @@ create role anon;
 create role authenticated;
 create table auth.users(id uuid primary key);
 create table public.mission365_user_roles(
-  user_id uuid references auth.users(id),role text,status text,
+  user_id uuid references auth.users(id) on delete cascade,role text,status text,
   primary key(user_id,role)
 );
 \ir ../supabase/migrations/20260901064300_mission365_crm_onboarding_bridge.sql

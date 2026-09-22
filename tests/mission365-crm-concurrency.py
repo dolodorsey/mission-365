@@ -60,17 +60,23 @@ def main():
                 if line.startswith('\\ir '):
                     source = (ROOT / 'tests' / line[4:]).resolve()
                     fixture = fixture.replace(line, source.read_text())
+            # Run existing state/privilege assertions before the committed race fixture.
+            run([TOOLS['psql'], '-X', '-v', 'ON_ERROR_STOP=1', '-f', str(ROOT / 'tests/mission365-crm-role-state.sql')])
             sql(fixture + '\ncommit;')
             uid = '00000000-0000-0000-0000-000000000001'
             sql(f"insert into auth.users values('{uid}'); insert into mission365_user_roles values('{uid}','mission_owner','active'),('{uid}','volunteer','active');")
             results = []
-            for label, initial_volunteer, final_volunteer, expected in [
-                ('simultaneous last-role deactivation', 'active', 'inactive', 'account_created'),
-                ('deactivation with simultaneous activation', 'inactive', 'active', 'role_activated'),
+            for label, initial_volunteer, final_volunteer, expected, remove in [
+                ('simultaneous last-role deactivation', 'active', 'inactive', 'account_created', False),
+                ('deactivation with simultaneous activation', 'inactive', 'active', 'role_activated', False),
+                ('deletion with simultaneous deactivation', 'active', 'inactive', 'account_created', True),
+                ('deletion with simultaneous activation', 'inactive', 'active', 'role_activated', True),
             ]:
+                sql(f"insert into mission365_user_roles values('{uid}','mission_owner','active') on conflict(user_id,role) do nothing;")
                 sql(f"update mission365_user_roles set status=case when role='mission_owner' then 'active' else '{initial_volunteer}' end;")
                 before = int(sql("select count(*) from mission365_crm_outbox where event_type='role.changed';"))
-                first = session('m365_first', "begin; update mission365_user_roles set status='inactive' where role='mission_owner'; select pg_sleep(3); commit;")
+                change = "delete from mission365_user_roles where role='mission_owner'" if remove else "update mission365_user_roles set status='inactive' where role='mission_owner'"
+                first = session('m365_first', 'begin; ' + change + '; select pg_sleep(3); commit;')
                 wait_for('m365_first', "wait_event='PgSleep'")
                 second = session('m365_second', f"begin; update mission365_user_roles set status='{final_volunteer}' where role='volunteer'; commit;")
                 wait_for('m365_second', "wait_event_type='Lock'")
@@ -84,6 +90,20 @@ def main():
                 assert after - before == 2, (label, 'missing or duplicate queue events')
                 assert sql("select count(*) from mission365_crm_outbox where status<>'pending' or attempts<>0 or processed_at is not null;") == '0'
                 results.append({'scenario': label, 'overlap_verified': True, 'stage': actual, 'new_pending_events': 2})
+            # Deletion semantics independent of concurrency; all fixture data only.
+            sql(f"update mission365_user_roles set status='active'; insert into mission365_user_roles values('{uid}','mission_owner','active');")
+            sql("delete from mission365_user_roles where role='mission_owner';")
+            assert sql("select onboarding_stage from mission365_crm_links;") == 'role_activated'
+            sql("delete from mission365_user_roles where role='volunteer';")
+            assert sql("select onboarding_stage from mission365_crm_links;") == 'account_created'
+            assert sql("select count(*) from mission365_crm_outbox where payload->>'operation'='DELETE' and payload->>'role'='volunteer' and payload->'status'='null'::jsonb and payload->>'previous_status'='active';") == '1'
+            sql(f"insert into mission365_user_roles values('{uid}','volunteer','inactive'); delete from mission365_user_roles where role='volunteer';")
+            assert sql("select onboarding_stage from mission365_crm_links;") == 'account_created'
+            sql(f"insert into mission365_user_roles values('{uid}','volunteer','active');")
+            cascade = run([TOOLS['psql'], '-X', '-At', '-v', 'ON_ERROR_STOP=1'], input=f"delete from auth.users where id='{uid}';")
+            assert 'WARNING' not in cascade.stderr, cascade.stderr
+            assert sql("select (select count(*) from mission365_user_roles)+(select count(*) from mission365_crm_links)+(select count(*) from mission365_crm_outbox);") == '0'
+            results.append({'scenario':'multi-role, last-role, inactive deletion, explicit deletion payload and parent cascade', 'passed':True})
             print(json.dumps({'passed': results, 'database': sql('show server_version;')}, indent=2))
         finally:
             for child in children:
